@@ -18,6 +18,12 @@ async def main():
             "Missing required environment variables: CLIENT_ID, CLIENT_SECRET, ZUGANGSNUMMER, or PIN"
         )
 
+    # Use type assertions to inform the type checker that these are not None
+    assert client_id is not None
+    assert client_secret is not None
+    assert zugangsnummer is not None
+    assert pin is not None
+
     client = ComdirectClient(client_id=client_id, client_secret=client_secret)
     print(client)
     data = await client.authenticate(username=zugangsnummer, password=pin)
