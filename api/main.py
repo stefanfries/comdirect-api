@@ -1,7 +1,9 @@
-from api.client import ComdirectClient
 import asyncio
+import os
+
 import dotenv
-import os   
+
+from api.client import ComdirectClient
 
 
 async def main():
@@ -11,6 +13,11 @@ async def main():
     zugangsnummer = os.getenv("ZUGANGSNUMMER")
     pin = os.getenv("PIN")
 
+    if not all([client_id, client_secret, zugangsnummer, pin]):
+        raise ValueError(
+            "Missing required environment variables: CLIENT_ID, CLIENT_SECRET, ZUGANGSNUMMER, or PIN"
+        )
+
     client = ComdirectClient(client_id=client_id, client_secret=client_secret)
     print(client)
     data = await client.authenticate(username=zugangsnummer, password=pin)
@@ -19,6 +26,7 @@ async def main():
     print(data)
     # data = await client.validate_session_tan()
     # print(data)
+
 
 if __name__ == "__main__":
     asyncio.run(main())

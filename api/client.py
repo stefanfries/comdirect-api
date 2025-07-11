@@ -1,9 +1,12 @@
-import httpx
-import time
-from typing import Dict, Any
-import uuid
-from .utils import timestamp
 import json
+import time
+import uuid
+from typing import Any, Dict
+
+import httpx
+
+from .utils import timestamp
+
 
 class ComdirectClient:
     def __init__(self, client_id: str, client_secret: str):
@@ -13,7 +16,6 @@ class ComdirectClient:
         self.refresh_token = None
         self.token_expires_at = 0
         self.session_id = None
-
 
     async def authenticate(self, username: str, password: str) -> Dict[str, Any]:
         """Initial authentication to get access and refresh tokens."""
@@ -40,7 +42,7 @@ class ComdirectClient:
             self.access_token = data["access_token"]
             self.refresh_token = data["refresh_token"]
             self.token_expires_at = time.time() + data["expires_in"]
-            return data           
+            return data
 
     async def get_session_status(self) -> Dict[str, Any]:
         # GET /session/clients/user/v1/sessions
@@ -51,12 +53,14 @@ class ComdirectClient:
                 headers={
                     "Accept": "application/json",
                     "Authorization": f"Bearer {self.access_token}",
-                    "x-http-request-info": json.dumps({
-                        "clientRequestId": {
-                            "sessionId": self.session_id,
-                            "requestId": timestamp(),
+                    "x-http-request-info": json.dumps(
+                        {
+                            "clientRequestId": {
+                                "sessionId": self.session_id,
+                                "requestId": timestamp(),
+                            }
                         }
-                    }),
+                    ),
                 },
             )
             # Debugging: Show the response status code and text in case of an error
@@ -66,7 +70,7 @@ class ComdirectClient:
             data = response.json()
             self.session_id = data[0]["identifier"]
             return data
-    
+
     async def validate_session_tan(self) -> Dict[str, Any]:
         """Validate the TAN for the session."""
         async with httpx.AsyncClient(follow_redirects=False) as client:
@@ -75,18 +79,20 @@ class ComdirectClient:
                 headers={
                     "Accept": "application/json",
                     "Authorization": f"Bearer {self.access_token}",
-                    "x-http-request-info": json.dumps({
-                        "clientRequestId": {
-                            "sessionId": self.session_id,
-                            "requestId": timestamp(),
+                    "x-http-request-info": json.dumps(
+                        {
+                            "clientRequestId": {
+                                "sessionId": self.session_id,
+                                "requestId": timestamp(),
+                            }
                         }
-                    }),
+                    ),
                 },
-                data=json.dumps({
+                json={
                     "identifier": self.session_id,
                     "sessionTanActive": True,
                     "activated2FA": True,
-                }),
+                },
             )
             # Debugging: Show the response status code and text in case of an error
             if response.status_code != 200:
@@ -101,15 +107,14 @@ class ComdirectClient:
 
             return data
 
-
     async def refresh_access_token(self) -> Dict[str, Any]:
         """Refresh the access token using the refresh token."""
         if not self.refresh_token:
             raise ValueError("No refresh token available. Please authenticate first.")
-        
+
         async with httpx.AsyncClient() as client:
             response = await client.post(
-                self.auth_url,
+                "https://api.comdirect.de/oauth/token",
                 headers={"Content-Type": "application/x-www-form-urlencoded"},
                 data={
                     "client_id": self.client_id,
@@ -128,12 +133,13 @@ class ComdirectClient:
         self.access_token = data.get("access_token")
         self.refresh_token = data.get("refresh_token")
         expires_in = data.get("expires_in", 0)
-        self.token_expires_at = time.time() + expires_in - 30  # Refresh 30 seconds before expiry
+        self.token_expires_at = (
+            time.time() + expires_in - 30
+        )  # Refresh 30 seconds before expiry
 
     def is_token_expired(self) -> bool:
         """Check if the access token is expired."""
         return time.time() >= self.token_expires_at
-
 
     async def get_account_balance(self) -> Dict[str, Any]:
         """Get the account balance."""
