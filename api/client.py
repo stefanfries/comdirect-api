@@ -5,7 +5,6 @@ import uuid
 from typing import Any, Dict
 
 import httpx
-from retrying import retry
 
 from .utils import timestamp
 
@@ -197,23 +196,17 @@ class ComdirectClient:
                         data = response.json()
                         status = data.get("status")
 
-                        print(
-                            f"TAN status check (attempt {attempt + 1}): {status}",
-                            end="\r",
-                        )
+                        print(f"TAN status check (attempt {attempt + 1}): {status}")
 
                         if status == "AUTHENTICATED":
                             print("TAN confirmed successfully!")
                             return data
                         elif status in ["PENDING", "ACTIVE"]:
-                            print(
-                                f"TAN challenge still pending (status: {status})...",
-                                end="\r",
-                            )
+                            print(f"TAN challenge still pending (status: {status})...")
                             await asyncio.sleep(delay)
                             continue
                         else:
-                            print(f"Unexpected TAN status: {status}", end="\r")
+                            print(f"Unexpected TAN status: {status}")
                             # Continue polling for other statuses
                             await asyncio.sleep(delay)
                             continue
