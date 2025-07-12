@@ -26,12 +26,15 @@ async def main():
 
     client = ComdirectClient(client_id=client_id, client_secret=client_secret)
     print(client)
+    _ = input("Press Enter to continue...")
     data = await client.authenticate(username=zugangsnummer, password=pin)
     print(data)
+    _ = input("Press Enter to continue...")
     data = await client.get_session_status()
     print(data)
-    # data = await client.validate_session_tan()
-    # print(data)
+    _ = input("Press Enter to continue...")
+    data = await client.validate_session_tan()
+    print(data)
 
 
 if __name__ == "__main__":
