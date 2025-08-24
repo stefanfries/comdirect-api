@@ -1,3 +1,23 @@
+"""
+Comdirect API Client
+This module provides an asynchronous client for interacting with the Comdirect REST API.
+It supports OAuth2 authentication, session management, TAN (two-factor authentication) validation,
+token refreshing, and account balance retrieval.
+Classes:
+    ComdirectClient: Main client class for Comdirect API operations.
+Dependencies:
+    - httpx: For asynchronous HTTP requests.
+    - asyncio: For asynchronous operations.
+    - uuid: For generating unique session/request IDs.
+    - time: For token expiration handling.
+    - json: For encoding/decoding request and response data.
+    - .utils.timestamp: Utility function for generating timestamps.
+Usage:
+    Instantiate `ComdirectClient` with your client credentials, then use its methods to authenticate,
+    manage sessions, validate TANs, refresh tokens, and retrieve account balances.
+
+"""
+
 import asyncio
 import json
 import time
@@ -12,16 +32,29 @@ from .utils import timestamp
 class ComdirectClient:
     """Class to interact with the Comdirect API."""
 
-    def __init__(self, client_id: str, client_secret: str):
+    def __init__(
+        self,
+        client_id: str,
+        client_secret: str,
+        session_tan: bool = False,
+        two_factor_auth: bool = False,
+    ):
         self.client_id = client_id
         self.client_secret = client_secret
         self.access_token: str | None = None
         self.refresh_token: str | None = None
         self.token_expires_at: float = 0
+        self.session_tan = session_tan
+        self.two_factor_auth = two_factor_auth
+        self.scope: str | None = None
         self.session_id: str | None = None
 
     async def authenticate(self, username: str, password: str) -> Dict[str, Any]:
-        """Generate initial OAuth2 access token and refresh token."""
+        """
+        Generate initial OAuth2 access token and refresh token.
+        POST /oauth/token
+        See chapter 2.1 of comdirect REST API documentation for details.
+        """
         async with httpx.AsyncClient(follow_redirects=False) as client:
             response = await client.post(
                 "https://api.comdirect.de/oauth/token",
@@ -32,9 +65,9 @@ class ComdirectClient:
                 data={
                     "client_id": self.client_id,
                     "client_secret": self.client_secret,
-                    "grant_type": "password",
                     "username": username,
                     "password": password,
+                    "grant_type": "password",
                 },
             )
             # Debugging: Show the response status code and text in case of an error
@@ -42,13 +75,18 @@ class ComdirectClient:
                 print(f"Error: {response.status_code}, response: {response.text}")
             response.raise_for_status()
             data = response.json()
-            self.access_token = data["access_token"]
-            self.refresh_token = data["refresh_token"]
-            self.token_expires_at = time.time() + data["expires_in"]
+            self.access_token = data.get("access_token")
+            self.refresh_token = data.get("refresh_token")
+            self.token_expires_at = time.time() + data.get("expires_in", 0)
+            self.scope = data.get("scope")
             return data
 
     async def get_session_status(self) -> Dict[str, Any]:
-        """GET /session/clients/user/v1/sessions"""
+        """
+        Retrieve session status
+        GET /session/clients/user/v1/sessions
+        See chapter 2.2 of comdirect REST API documentation for details.
+        """
         async with httpx.AsyncClient(follow_redirects=False) as client:
             self.session_id = str(uuid.uuid4())
             response = await client.get(
@@ -71,11 +109,17 @@ class ComdirectClient:
                 print(f"Error: {response.status_code}, response: {response.text}")
             response.raise_for_status()
             data = response.json()
-            self.session_id = data[0]["identifier"]
+            self.session_id = data[0].get("identifier")
+            self.session_tan = data[0].get("sessionTanActive", False)
+            self.two_factor_auth = data[0].get("activated2FA", False)
             return data
 
-    async def validate_session_tan(self) -> Dict[str, Any]:
-        """Validate the TAN for the session."""
+    async def create_validate_session_tan(self) -> Dict[str, Any]:
+        """
+        Create and validate session TAN.
+        POST URL-Präfix/session/clients/{clientId}/v1/sessions/{sessionId}/validate
+        See chapter 2.3 of comdirect REST API documentation for details.
+        """
         # Check prerequisites
         if not self.session_id:
             raise ValueError(
@@ -102,7 +146,22 @@ class ComdirectClient:
         print("Please check your smartphone and approve the TAN request...")
 
         # Step 2: Wait for TAN confirmation using the correct URL
-        return await self._wait_for_tan_confirmation(auth_url)
+
+        data = await self._wait_for_tan_confirmation(auth_url)
+        if data.get("status") == "AUTHENTICATED":
+            self.session_tan = True
+            self.two_factor_auth = True
+        else:
+            self.session_tan = False
+            self.two_factor_auth = False
+        return data
+
+    async def activate_session_tan(self):
+        """
+        Activate session TAN
+        PATCH URL-Präfix/session/clients/{clientId}/v1/sessions/{sessionId}
+        See chapter 2.4 of comdirect REST API documentation for details.
+        """
 
     async def _initiate_tan_challenge(self) -> Dict[str, Any]:
         """Initiate the TAN challenge (sends push notification)."""
@@ -118,17 +177,17 @@ class ComdirectClient:
                                 "sessionId": self.session_id,
                                 "requestId": timestamp(),
                             }
-                        }
+                        },
                     ),
                 },
                 json={
                     "identifier": self.session_id,
-                    "sessionTanActive": True,
-                    "activated2FA": True,
+                    "sessionTanActive": True,  # replace by self.session_tan later
+                    "activated2FA": True,  # replace by self.two_factor_auth later
                 },
             )
             # Debugging: Show the response status code and text in case of an error
-            if response.status_code != 200:
+            if response.status_code != httpx.codes.CREATED:
                 print(f"Error: {response.status_code}, response: {response.text}")
             response.raise_for_status()
 
@@ -194,6 +253,7 @@ class ComdirectClient:
 
                     if response.status_code == httpx.codes.OK:
                         data = response.json()
+                        print(f"DEBUG: \n\n{data}")
                         status = data.get("status")
 
                         print(f"TAN status check (attempt {attempt + 1}): {status}")

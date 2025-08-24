@@ -24,28 +24,6 @@ import pytest
 
 from api.client import ComdirectClient
 
-# pylint: disable=redefined-outer-name
-
-
-@pytest.fixture
-def creds():
-    """Fixture providing test client credentials."""
-    return {
-        "client_id": "test_client_id",
-        "client_secret": "test_client_secret",
-        "username": "test_username",
-        "password": "test_password",
-    }
-
-
-@pytest.fixture
-def client_instance(creds):
-    """Fixture providing a ComdirectClient instance."""
-    return ComdirectClient(
-        client_id=creds["client_id"],
-        client_secret=creds["client_secret"],
-    )
-
 
 @pytest.mark.asyncio
 async def test_authenticate_success(client_instance, creds):
@@ -56,6 +34,7 @@ async def test_authenticate_success(client_instance, creds):
         "refresh_token": "test_refresh_token",
         "expires_in": 3600,
         "token_type": "Bearer",
+        "scope": "read write",
     }
 
     # Mock the HTTP response
@@ -81,6 +60,7 @@ async def test_authenticate_success(client_instance, creds):
         assert client_instance.access_token == "test_access_token"
         assert client_instance.refresh_token == "test_refresh_token"
         assert client_instance.token_expires_at > time.time()
+        assert client_instance.scope == "read write"
 
         # Verify the HTTP call was made correctly
         mock_http_client.post.assert_called_once_with(
@@ -189,9 +169,10 @@ async def test_authenticate_missing_tokens_in_response(client_instance, creds):
     with patch("httpx.AsyncClient") as mock_client_class:
         mock_client_class.return_value.__aenter__.return_value = mock_http_client
 
-        # Call authenticate and expect it to raise a KeyError
-        with pytest.raises(KeyError):
-            await client_instance.authenticate(creds["username"], creds["password"])
+        # Call authenticate and check that tokens are not set due to missing fields
+        await client_instance.authenticate(creds["username"], creds["password"])
+        assert client_instance.access_token is None
+        assert client_instance.refresh_token is None
 
 
 @pytest.mark.asyncio
