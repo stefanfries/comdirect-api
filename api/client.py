@@ -15,13 +15,13 @@ class ComdirectClient:
     def __init__(self, client_id: str, client_secret: str):
         self.client_id = client_id
         self.client_secret = client_secret
-        self.access_token = None
-        self.refresh_token = None
-        self.token_expires_at = 0
-        self.session_id = None
+        self.access_token: str | None = None
+        self.refresh_token: str | None = None
+        self.token_expires_at: float = 0
+        self.session_id: str | None = None
 
     async def authenticate(self, username: str, password: str) -> Dict[str, Any]:
-        """Initial authentication to get access and refresh tokens."""
+        """Generate initial OAuth2 access token and refresh token."""
         async with httpx.AsyncClient(follow_redirects=False) as client:
             response = await client.post(
                 "https://api.comdirect.de/oauth/token",
@@ -32,9 +32,9 @@ class ComdirectClient:
                 data={
                     "client_id": self.client_id,
                     "client_secret": self.client_secret,
+                    "grant_type": "password",
                     "username": username,
                     "password": password,
-                    "grant_type": "password",
                 },
             )
             # Debugging: Show the response status code and text in case of an error
@@ -198,18 +198,21 @@ class ComdirectClient:
 
                         print(f"TAN status check (attempt {attempt + 1}): {status}")
 
-                        if status == "AUTHENTICATED":
-                            print("TAN confirmed successfully!")
-                            return data
-                        elif status in ["PENDING", "ACTIVE"]:
-                            print(f"TAN challenge still pending (status: {status})...")
-                            await asyncio.sleep(delay)
-                            continue
-                        else:
-                            print(f"Unexpected TAN status: {status}")
-                            # Continue polling for other statuses
-                            await asyncio.sleep(delay)
-                            continue
+                        match status:
+                            case "AUTHENTICATED":
+                                print("TAN confirmed successfully!")
+                                return data
+                            case "PENDING" | "ACTIVE":
+                                print(
+                                    f"TAN challenge still pending (status: {status})..."
+                                )
+                                await asyncio.sleep(delay)
+                                continue
+                            case _:
+                                print(f"Unexpected TAN status: {status}")
+                                # Continue polling for other statuses
+                                await asyncio.sleep(delay)
+                                continue
                     else:
                         print(
                             f"Unexpected status code: {response.status_code}, response: {response.text}"

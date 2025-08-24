@@ -25,16 +25,15 @@ async def main():
     assert pin is not None
 
     client = ComdirectClient(client_id=client_id, client_secret=client_secret)
-    print(client)
-    _ = input("Press Enter to continue...")
     data = await client.authenticate(username=zugangsnummer, password=pin)
-    print(data)
-    _ = input("Press Enter to continue...")
     data = await client.get_session_status()
-    print(data)
-    _ = input("Press Enter to continue...")
     data = await client.validate_session_tan()
-    print(data)
+    print(f"Validated session TAN: {data}")
+    print(f"Session ID: {client.session_id}")
+    print(f"Access Token: {client.access_token}")
+    print(f"Refresh Token: {client.refresh_token}")
+    print(f"Token Expires At: {client.token_expires_at}")
+    print(f"Token Expired: {client.is_token_expired()}")
 
 
 if __name__ == "__main__":
