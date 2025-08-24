@@ -1,3 +1,20 @@
+"""
+Unit tests for the ComdirectClient authentication logic.
+This module contains pytest-based asynchronous tests for the ComdirectClient class,
+focusing on the authentication workflow. It covers scenarios such as successful
+authentication, HTTP errors, invalid credentials, network issues, malformed responses,
+token expiration calculation, and debug output on errors. Fixtures are provided for
+client credentials and client instantiation.
+Tested behaviors include:
+- Successful authentication and token storage.
+- Handling of HTTP and network errors.
+- Handling of invalid or missing credentials.
+- Response parsing errors (malformed JSON, missing fields).
+- Token expiration time calculation.
+- Debug output on authentication errors.
+- Client initialization state.
+"""
+
 import json
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -7,9 +24,11 @@ import pytest
 
 from api.client import ComdirectClient
 
+# pylint: disable=redefined-outer-name
+
 
 @pytest.fixture
-def client_creds():
+def creds():
     """Fixture providing test client credentials."""
     return {
         "client_id": "test_client_id",
@@ -20,15 +39,16 @@ def client_creds():
 
 
 @pytest.fixture
-def client(client_creds):
+def client_instance(creds):
     """Fixture providing a ComdirectClient instance."""
     return ComdirectClient(
-        client_id=client_creds["client_id"], client_secret=client_creds["client_secret"]
+        client_id=creds["client_id"],
+        client_secret=creds["client_secret"],
     )
 
 
 @pytest.mark.asyncio
-async def test_authenticate_success(client, client_creds):
+async def test_authenticate_success(client_instance, creds):
     """Test successful authentication."""
     # Mock successful response data
     mock_response_data = {
@@ -52,15 +72,15 @@ async def test_authenticate_success(client, client_creds):
         mock_client_class.return_value.__aenter__.return_value = mock_http_client
 
         # Call the authenticate method
-        result = await client.authenticate(
-            client_creds["username"], client_creds["password"]
+        result = await client_instance.authenticate(
+            creds["username"], creds["password"]
         )
 
         # Verify the result
         assert result == mock_response_data
-        assert client.access_token == "test_access_token"
-        assert client.refresh_token == "test_refresh_token"
-        assert client.token_expires_at > time.time()
+        assert client_instance.access_token == "test_access_token"
+        assert client_instance.refresh_token == "test_refresh_token"
+        assert client_instance.token_expires_at > time.time()
 
         # Verify the HTTP call was made correctly
         mock_http_client.post.assert_called_once_with(
@@ -70,17 +90,17 @@ async def test_authenticate_success(client, client_creds):
                 "Content-Type": "application/x-www-form-urlencoded",
             },
             data={
-                "client_id": client_creds["client_id"],
-                "client_secret": client_creds["client_secret"],
-                "username": client_creds["username"],
-                "password": client_creds["password"],
+                "client_id": creds["client_id"],
+                "client_secret": creds["client_secret"],
+                "username": creds["username"],
+                "password": creds["password"],
                 "grant_type": "password",
             },
         )
 
 
 @pytest.mark.asyncio
-async def test_authenticate_http_error(client, client_creds):
+async def test_authenticate_http_error(client_instance, creds):
     """Test authentication with HTTP error response."""
     # Mock error response
     mock_response = MagicMock()
@@ -99,18 +119,16 @@ async def test_authenticate_http_error(client, client_creds):
 
         # Call authenticate and expect it to raise an exception
         with pytest.raises(httpx.HTTPStatusError):
-            await client.authenticate(
-                client_creds["username"], client_creds["password"]
-            )
+            await client_instance.authenticate(creds["username"], creds["password"])
 
         # Verify tokens are not set on error
-        assert client.access_token is None
-        assert client.refresh_token is None
-        assert client.token_expires_at == 0
+        assert client_instance.access_token is None
+        assert client_instance.refresh_token is None
+        assert client_instance.token_expires_at == 0
 
 
 @pytest.mark.asyncio
-async def test_authenticate_invalid_credentials(client, client_creds):
+async def test_authenticate_invalid_credentials(client_instance, creds):
     """Test authentication with invalid credentials (400 error)."""
     # Mock error response for invalid credentials
     mock_response = MagicMock()
@@ -131,13 +149,11 @@ async def test_authenticate_invalid_credentials(client, client_creds):
 
         # Call authenticate and expect it to raise an exception
         with pytest.raises(httpx.HTTPStatusError):
-            await client.authenticate(
-                client_creds["username"], client_creds["password"]
-            )
+            await client_instance.authenticate(creds["username"], creds["password"])
 
 
 @pytest.mark.asyncio
-async def test_authenticate_network_error(client, client_creds):
+async def test_authenticate_network_error(client_instance, creds):
     """Test authentication with network connectivity issues."""
     # Mock the HTTP client to raise a network error
     mock_http_client = AsyncMock()
@@ -148,13 +164,11 @@ async def test_authenticate_network_error(client, client_creds):
 
         # Call authenticate and expect it to raise a ConnectError
         with pytest.raises(httpx.ConnectError):
-            await client.authenticate(
-                client_creds["username"], client_creds["password"]
-            )
+            await client_instance.authenticate(creds["username"], creds["password"])
 
 
 @pytest.mark.asyncio
-async def test_authenticate_missing_tokens_in_response(client, client_creds):
+async def test_authenticate_missing_tokens_in_response(client_instance, creds):
     """Test authentication when response is missing required tokens."""
     # Mock response with missing tokens
     mock_response_data = {
@@ -177,13 +191,11 @@ async def test_authenticate_missing_tokens_in_response(client, client_creds):
 
         # Call authenticate and expect it to raise a KeyError
         with pytest.raises(KeyError):
-            await client.authenticate(
-                client_creds["username"], client_creds["password"]
-            )
+            await client_instance.authenticate(creds["username"], creds["password"])
 
 
 @pytest.mark.asyncio
-async def test_authenticate_malformed_json_response(client, client_creds):
+async def test_authenticate_malformed_json_response(client_instance, creds):
     """Test authentication with malformed JSON response."""
     # Mock response that returns invalid JSON
     mock_response = MagicMock()
@@ -200,13 +212,11 @@ async def test_authenticate_malformed_json_response(client, client_creds):
 
         # Call authenticate and expect it to raise a JSONDecodeError
         with pytest.raises(json.JSONDecodeError):
-            await client.authenticate(
-                client_creds["username"], client_creds["password"]
-            )
+            await client_instance.authenticate(creds["username"], creds["password"])
 
 
 @pytest.mark.asyncio
-async def test_authenticate_token_expiration_calculation(client, client_creds):
+async def test_authenticate_token_expiration_calculation(client_instance, creds):
     """Test that token expiration time is calculated correctly."""
     expires_in = 7200  # 2 hours
     mock_response_data = {
@@ -230,7 +240,7 @@ async def test_authenticate_token_expiration_calculation(client, client_creds):
         # Record time before call
         before_time = time.time()
 
-        await client.authenticate(client_creds["username"], client_creds["password"])
+        await client_instance.authenticate(creds["username"], creds["password"])
 
         # Record time after call
         after_time = time.time()
@@ -239,11 +249,11 @@ async def test_authenticate_token_expiration_calculation(client, client_creds):
         expected_min = before_time + expires_in
         expected_max = after_time + expires_in
 
-        assert expected_min <= client.token_expires_at <= expected_max
+        assert expected_min <= client_instance.token_expires_at <= expected_max
 
 
 @pytest.mark.asyncio
-async def test_authenticate_debug_output_on_error(client, client_creds):
+async def test_authenticate_debug_output_on_error(client_instance, creds):
     """Test that debug information is printed on HTTP errors."""
     # Mock error response
     mock_response = MagicMock()
@@ -263,9 +273,7 @@ async def test_authenticate_debug_output_on_error(client, client_creds):
 
         # Call authenticate and expect it to raise an exception
         with pytest.raises(httpx.HTTPStatusError):
-            await client.authenticate(
-                client_creds["username"], client_creds["password"]
-            )
+            await client_instance.authenticate(creds["username"], creds["password"])
 
         # Verify debug output was printed
         mock_print.assert_called_with("Error: 500, response: Internal Server Error")
@@ -284,7 +292,7 @@ def test_client_initialization():
 
 
 @pytest.mark.asyncio
-async def test_authenticate_with_empty_credentials(client):
+async def test_authenticate_with_empty_credentials(client_instance):
     """Test authentication with empty username and password."""
     # This should still make the HTTP call, but the server will likely reject it
     mock_response = MagicMock()
@@ -301,7 +309,7 @@ async def test_authenticate_with_empty_credentials(client):
         mock_client_class.return_value.__aenter__.return_value = mock_http_client
 
         with pytest.raises(httpx.HTTPStatusError):
-            await client.authenticate("", "")
+            await client_instance.authenticate("", "")
 
         # Verify the call was made with empty credentials
         mock_http_client.post.assert_called_once()
