@@ -32,6 +32,9 @@ from .utils import timestamp
 class ComdirectClient:
     """Class to interact with the Comdirect API."""
 
+    BASE_URL = "https://api.comdirect.de/api"
+    OAUTH_URL = "https://api.comdirect.de/oauth/token"
+
     def __init__(
         self,
         client_id: str,
@@ -52,24 +55,22 @@ class ComdirectClient:
     async def authenticate(self, username: str, password: str) -> Dict[str, Any]:
         """
         Generate initial OAuth2 access token and refresh token.
-        POST /oauth/token
         See chapter 2.1 of comdirect REST API documentation for details.
         """
+        headers = {
+            "Accept": "application/json",
+            "Content-Type": "application/x-www-form-urlencoded",
+        }
+        payload = {
+            "client_id": self.client_id,
+            "client_secret": self.client_secret,
+            "username": username,
+            "password": password,
+            "grant_type": "password",
+        }
         async with httpx.AsyncClient(follow_redirects=False) as client:
-            response = await client.post(
-                "https://api.comdirect.de/oauth/token",
-                headers={
-                    "Accept": "application/json",
-                    "Content-Type": "application/x-www-form-urlencoded",
-                },
-                data={
-                    "client_id": self.client_id,
-                    "client_secret": self.client_secret,
-                    "username": username,
-                    "password": password,
-                    "grant_type": "password",
-                },
-            )
+            response = await client.post(self.OAUTH_URL, headers=headers, data=payload)
+
             # Debugging: Show the response status code and text in case of an error
             if response.status_code != httpx.codes.OK:
                 print(f"Error: {response.status_code}, response: {response.text}")
@@ -84,26 +85,24 @@ class ComdirectClient:
     async def get_session_status(self) -> Dict[str, Any]:
         """
         Retrieve session status
-        GET /session/clients/user/v1/sessions
         See chapter 2.2 of comdirect REST API documentation for details.
         """
+        self.session_id = uuid.uuid4().hex  # 32 hex chars
+        url = f"{self.BASE_URL}/session/clients/user/v1/sessions"
+        headers = {
+            "Accept": "application/json",
+            "Authorization": f"Bearer {self.access_token}",
+            "x-http-request-info": json.dumps(
+                {
+                    "clientRequestId": {
+                        "sessionId": self.session_id,
+                        "requestId": timestamp(),
+                    }
+                }
+            ),
+        }
         async with httpx.AsyncClient(follow_redirects=False) as client:
-            self.session_id = str(uuid.uuid4())
-            response = await client.get(
-                "https://api.comdirect.de/api/session/clients/user/v1/sessions",
-                headers={
-                    "Accept": "application/json",
-                    "Authorization": f"Bearer {self.access_token}",
-                    "x-http-request-info": json.dumps(
-                        {
-                            "clientRequestId": {
-                                "sessionId": self.session_id,
-                                "requestId": timestamp(),
-                            }
-                        }
-                    ),
-                },
-            )
+            response = await client.get(url, headers=headers)
             # Debugging: Show the response status code and text in case of an error
             if response.status_code != httpx.codes.OK:
                 print(f"Error: {response.status_code}, response: {response.text}")
@@ -117,7 +116,6 @@ class ComdirectClient:
     async def create_validate_session_tan(self) -> Dict[str, Any]:
         """
         Create and validate session TAN.
-        POST URL-Präfix/session/clients/{clientId}/v1/sessions/{sessionId}/validate
         See chapter 2.3 of comdirect REST API documentation for details.
         """
         # Check prerequisites
@@ -159,68 +157,66 @@ class ComdirectClient:
     async def activate_session_tan(self):
         """
         Activate session TAN
-        PATCH URL-Präfix/session/clients/{clientId}/v1/sessions/{sessionId}
         See chapter 2.4 of comdirect REST API documentation for details.
         """
 
     async def _initiate_tan_challenge(self) -> Dict[str, Any]:
         """Initiate the TAN challenge (sends push notification)."""
+
+        url = f"{self.BASE_URL}/session/clients/user/v1/sessions/{self.session_id}/validate"
+        headers = {
+            "Accept": "application/json",
+            "Authorization": f"Bearer {self.access_token}",
+            "x-http-request-info": json.dumps(
+                {
+                    "clientRequestId": {
+                        "sessionId": self.session_id,
+                        "requestId": timestamp(),
+                    }
+                }
+            ),
+        }
+        payload = {
+            "identifier": self.session_id,
+            "sessionTanActive": True,  # replace by self.session_tan later
+            "activated2FA": True,  # replace by self.two_factor_auth later
+        }
         async with httpx.AsyncClient(follow_redirects=False) as client:
-            response = await client.post(
-                f"https://api.comdirect.de/api/session/clients/user/v1/sessions/{self.session_id}/validate",
-                headers={
-                    "Accept": "application/json",
-                    "Authorization": f"Bearer {self.access_token}",
-                    "x-http-request-info": json.dumps(
-                        {
-                            "clientRequestId": {
-                                "sessionId": self.session_id,
-                                "requestId": timestamp(),
-                            }
-                        },
-                    ),
-                },
-                json={
-                    "identifier": self.session_id,
-                    "sessionTanActive": True,  # replace by self.session_tan later
-                    "activated2FA": True,  # replace by self.two_factor_auth later
-                },
-            )
-            # Debugging: Show the response status code and text in case of an error
-            if response.status_code != httpx.codes.CREATED:
-                print(f"Error: {response.status_code}, response: {response.text}")
-            response.raise_for_status()
+            response = await client.post(url, headers=headers, json=payload)
 
-            # Print response for debugging
-            response_data = response.json()
-            print(f"Response JSON: {response_data}")
+        # Debugging: Show the response status code and text in case of an error
+        if response.status_code != httpx.codes.CREATED:
+            print(f"Error: {response.status_code}, response: {response.text}")
+        response.raise_for_status()
 
-            # Safely extract authentication info from headers
-            auth_header = response.headers.get("x-once-authentication-info")
-            if not auth_header:
-                raise ValueError(
-                    "Missing 'x-once-authentication-info' header in response"
-                )
+        # Print response for debugging
+        response_data = response.json()
+        print(f"Response JSON: {response_data}")
 
-            try:
-                data = json.loads(auth_header)
-            except json.JSONDecodeError as e:
-                raise ValueError(
-                    f"Invalid JSON in 'x-once-authentication-info' header: {e}"
-                ) from e
+        # Safely extract authentication info from headers
+        auth_header = response.headers.get("x-once-authentication-info")
+        if not auth_header:
+            raise ValueError("Missing 'x-once-authentication-info' header in response")
 
-            print(f"Authentication info: {data}")
+        try:
+            data = json.loads(auth_header)
+        except json.JSONDecodeError as e:
+            raise ValueError(
+                f"Invalid JSON in 'x-once-authentication-info' header: {e}"
+            ) from e
 
-            # Extract the correct authentication URL from the response
-            auth_url = data.get("link", {}).get("href")
-            if not auth_url:
-                raise ValueError("Missing authentication URL in TAN challenge response")
+        print(f"Authentication info: {data}")
 
-            print(f"Authentication URL: {auth_url}")
+        # Extract the correct authentication URL from the response
+        auth_url = data.get("link", {}).get("href")
+        if not auth_url:
+            raise ValueError("Missing authentication URL in TAN challenge response")
 
-            # Add the auth_url to the data for later use
-            data["auth_url"] = auth_url
-            return data
+        print(f"Authentication URL: {auth_url}")
+
+        # Add the auth_url to the data for later use
+        data["auth_url"] = auth_url
+        return data
 
     async def _wait_for_tan_confirmation(
         self, auth_url: str, max_attempts: int = 15, delay: int = 2
@@ -228,32 +224,30 @@ class ComdirectClient:
         """Wait for TAN confirmation by polling the authentication URL."""
         print(f"Waiting for TAN confirmation using URL: {auth_url}")
 
+        # Construct the full URL (auth_url is relative)
+        full_url = f"https://api.comdirect.de{auth_url}"
+
+        headers = {
+            "Accept": "application/json",
+            "Authorization": f"Bearer {self.access_token}",
+            "x-http-request-info": json.dumps(
+                {
+                    "clientRequestId": {
+                        "sessionId": self.session_id,
+                        "requestId": timestamp(),
+                    }
+                }
+            ),
+        }
+
         for attempt in range(max_attempts):
             try:
                 # Poll the authentication status using the provided URL
                 async with httpx.AsyncClient(follow_redirects=False) as client:
-                    # Construct the full URL (auth_url is relative)
-                    full_url = f"https://api.comdirect.de{auth_url}"
-
-                    response = await client.get(
-                        full_url,
-                        headers={
-                            "Accept": "application/json",
-                            "Authorization": f"Bearer {self.access_token}",
-                            "x-http-request-info": json.dumps(
-                                {
-                                    "clientRequestId": {
-                                        "sessionId": self.session_id,
-                                        "requestId": timestamp(),
-                                    }
-                                }
-                            ),
-                        },
-                    )
+                    response = await client.get(full_url, headers=headers)
 
                     if response.status_code == httpx.codes.OK:
                         data = response.json()
-                        print(f"DEBUG: \n\n{data}")
                         status = data.get("status")
 
                         print(f"TAN status check (attempt {attempt + 1}): {status}")
@@ -299,17 +293,15 @@ class ComdirectClient:
         if not self.refresh_token:
             raise ValueError("No refresh token available. Please authenticate first.")
 
+        payload = {
+            "client_id": self.client_id,
+            "client_secret": self.client_secret,
+            "grant_type": "refresh_token",
+            "refresh_token": self.refresh_token,
+        }
+        headers = {"Content-Type": "application/x-www-form-urlencoded"}
         async with httpx.AsyncClient() as client:
-            response = await client.post(
-                "https://api.comdirect.de/oauth/token",
-                headers={"Content-Type": "application/x-www-form-urlencoded"},
-                data={
-                    "client_id": self.client_id,
-                    "client_secret": self.client_secret,
-                    "grant_type": "refresh_token",
-                    "refresh_token": self.refresh_token,
-                },
-            )
+            response = await client.post(self.OAUTH_URL, headers=headers, data=payload)
             response.raise_for_status()
             data = response.json()
             self._update_tokens(data)
@@ -335,7 +327,7 @@ class ComdirectClient:
 
         async with httpx.AsyncClient() as client:
             response = await client.get(
-                "https://api.comdirect.de/api/v1/accounts",
+                f"{self.BASE_URL}/v1/accounts",
                 headers={"Authorization": f"Bearer {self.access_token}"},
             )
             response.raise_for_status()
