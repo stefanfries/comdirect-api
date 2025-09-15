@@ -25,8 +25,11 @@ async def main():
     assert pin is not None
 
     client = ComdirectClient(client_id=client_id, client_secret=client_secret)
+    print(f"Client initialized with ID: {client.client_id}\n")
     data = await client.authenticate(username=zugangsnummer, password=pin)
+    print(f"Client authenticated: {data}\n")
     data = await client.get_session_status()
+    print(f"retrieved session status: {data}\n")
     data = await client.create_validate_session_tan()
     print(f"Validated session TAN: {data}")
     print(f"Session ID: {client.session_id}")
@@ -34,8 +37,17 @@ async def main():
     print(f"Refresh Token: {client.refresh_token}")
     print(f"Token Expires At: {client.token_expires_at}")
     print(f"Token Expired: {client.is_token_expired()}")
-    print(f"Session TAN: {client.session_tan}")
+    print(f"Session TAN: {client.session_tan_active}")
     print(f"Two-Factor Authentication: {client.two_factor_auth}")
+    print(f"Scope: {client.scope}")
+    print(f"Available TAN types: {client.available_tan_types}")
+    print(f"TAN type: {client.tan_type}")
+    print(f"TAN challenge ID: {client.challenge_id}")
+    print(f"TAN challenge link: {client.challenge_link}")
+
+
+#  data = await client.get_account_balances()
+#   print(f"Account Balance: {data}")
 
 
 if __name__ == "__main__":

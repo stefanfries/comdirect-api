@@ -39,29 +39,36 @@ class ComdirectClient:
         self,
         client_id: str,
         client_secret: str,
-        session_tan: bool = False,
-        two_factor_auth: bool = False,
     ):
         self.client_id = client_id
         self.client_secret = client_secret
         self.access_token: str | None = None
         self.refresh_token: str | None = None
+        self.session_id: str | None = (
+            None  # session_id will be set after authentication
+        )
         self.token_expires_at: float = 0
-        self.session_tan = session_tan
-        self.two_factor_auth = two_factor_auth
         self.scope: str | None = None
-        self.session_id: str | None = None
+        self.available_tan_types: list[str] = []
+        self.tan_type: str | None = None
+        self.session_tan_active: bool = False
+        self.two_factor_auth: bool = False
+
+        # TAN challenge info, only valid between TAN initiation and activation
+        self.challenge_id: str | None = None
+        self.challenge_link: str | None = None
 
     async def authenticate(self, username: str, password: str) -> Dict[str, Any]:
         """
-        Generate initial OAuth2 access token and refresh token.
-        See chapter 2.1 of comdirect REST API documentation for details.
+        Authenticate with Comdirect OAuth2 and retrieve access/refresh tokens.
+        Returns a dict containing tokens and expiration info.
+        See chapter 1.1 of comdirect REST API documentation for details.
         """
         headers = {
             "Accept": "application/json",
             "Content-Type": "application/x-www-form-urlencoded",
         }
-        payload = {
+        data = {
             "client_id": self.client_id,
             "client_secret": self.client_secret,
             "username": username,
@@ -69,16 +76,20 @@ class ComdirectClient:
             "grant_type": "password",
         }
         async with httpx.AsyncClient(follow_redirects=False) as client:
-            response = await client.post(self.OAUTH_URL, headers=headers, data=payload)
+            response = await client.post(self.OAUTH_URL, headers=headers, data=data)
 
             # Debugging: Show the response status code and text in case of an error
             if response.status_code != httpx.codes.OK:
-                print(f"Error: {response.status_code}, response: {response.text}")
+                print(
+                    f"Authentication failed. Status code: {response.status_code}, response: {response.text}"
+                )
             response.raise_for_status()
             data = response.json()
             self.access_token = data.get("access_token")
             self.refresh_token = data.get("refresh_token")
-            self.token_expires_at = time.time() + data.get("expires_in", 0)
+            self.token_expires_at = (
+                time.time() + data.get("expires_in", 0) - 30
+            )  # Refresh 30 seconds before expiry
             self.scope = data.get("scope")
             return data
 
@@ -109,13 +120,16 @@ class ComdirectClient:
             response.raise_for_status()
             data = response.json()
             self.session_id = data[0].get("identifier")
-            self.session_tan = data[0].get("sessionTanActive", False)
+            self.session_tan_active = data[0].get("sessionTanActive", False)
             self.two_factor_auth = data[0].get("activated2FA", False)
             return data
 
     async def create_validate_session_tan(self) -> Dict[str, Any]:
         """
-        Create and validate session TAN.
+        Orchestrates the TAN activation workflow:
+        1. Waits for TAN confirmation (push / app).
+        2. Activates the session TAN.
+        Returns the activation response as a dict.
         See chapter 2.3 of comdirect REST API documentation for details.
         """
         # Check prerequisites
@@ -128,10 +142,12 @@ class ComdirectClient:
 
         # Step 1: Initiate TAN challenge
         print("Initiating TAN challenge...")
-        challenge_data = await self._initiate_tan_challenge()
+        challenge_data = await self.initiate_tan_challenge()
+        print(f"TAN challenge data: {challenge_data}")
         challenge_id = challenge_data.get("id")
-        tan_type = challenge_data.get("challenge")
+        tan_type = challenge_data.get("typ")
         auth_url = challenge_data.get("auth_url")
+        available_tan_types = challenge_data.get("availableTypes", [])
 
         if not challenge_id:
             raise ValueError("No challenge ID received from TAN initiation")
@@ -139,29 +155,67 @@ class ComdirectClient:
             raise ValueError("No authentication URL received from TAN initiation")
 
         print(
-            f"TAN challenge initiated. Challenge ID: {challenge_id}, Type: {tan_type}"
+            f"Available TAN types: {available_tan_types}\n"
+            f"TAN challenge initiated. Challenge ID: {challenge_id}, Type: {tan_type}\n"
+            f"Please check your smartphone and approve the TAN request...\n"
         )
-        print("Please check your smartphone and approve the TAN request...")
 
         # Step 2: Wait for TAN confirmation using the correct URL
 
         data = await self._wait_for_tan_confirmation(auth_url)
         if data.get("status") == "AUTHENTICATED":
-            self.session_tan = True
+            self.session_tan_active = True
             self.two_factor_auth = True
-        else:
-            self.session_tan = False
-            self.two_factor_auth = False
+            print("TAN authentication successful, activating session TAN...")
         return data
 
-    async def activate_session_tan(self):
+    async def activate_session_tan(self, challenge_id: str):
         """
         Activate session TAN
         See chapter 2.4 of comdirect REST API documentation for details.
         """
+        url = f"{self.BASE_URL}/session/clients/user/v1/sessions/{self.session_id}"
+        headers = {
+            "Accept": "application/json",
+            "Authorization": f"Bearer {self.access_token}",
+            "x-http-request-info": json.dumps(
+                {
+                    "clientRequestId": {
+                        "sessionId": self.session_id,
+                        "requestId": timestamp(),
+                    }
+                }
+            ),
+            "Content-Type": "application/json",
+            "x-once-authentication-info": json.dumps({"id": challenge_id}),
+        }
+        payload = {
+            "identifier": self.session_id,
+            "sessionTanActive": True,
+        }
+        async with httpx.AsyncClient(follow_redirects=False) as client:
+            response = await client.patch(url, headers=headers, json=payload)
+            # Debugging: Show the response status code and text in case of an error
+            if response.status_code != httpx.codes.OK:
+                # Debug output for troubleshooting
+                print(
+                    f"Error activating session TAN: {response.status_code}, {response.text}"
+                )
+            response.raise_for_status()
+            return response.json()
 
-    async def _initiate_tan_challenge(self) -> Dict[str, Any]:
-        """Initiate the TAN challenge (sends push notification)."""
+    async def initiate_tan_challenge(self) -> Dict[str, Any]:
+        """
+        Start a TAN challenge for the user session.
+        Stores challenge ID and link in self.challenge_id / self.challenge_link.
+        Returns the challenge JSON.
+        """
+        if not self.session_id:
+            raise ValueError(
+                "No session ID available. Please establish a session first."
+            )
+        if not self.access_token:
+            raise ValueError("No access token available. Please authenticate first.")
 
         url = f"{self.BASE_URL}/session/clients/user/v1/sessions/{self.session_id}/validate"
         headers = {
@@ -178,7 +232,7 @@ class ComdirectClient:
         }
         payload = {
             "identifier": self.session_id,
-            "sessionTanActive": True,  # replace by self.session_tan later
+            "sessionTanActive": True,  # replace by self.session_tan_active later
             "activated2FA": True,  # replace by self.two_factor_auth later
         }
         async with httpx.AsyncClient(follow_redirects=False) as client:
@@ -186,14 +240,16 @@ class ComdirectClient:
 
         # Debugging: Show the response status code and text in case of an error
         if response.status_code != httpx.codes.CREATED:
-            print(f"Error: {response.status_code}, response: {response.text}")
+            print(
+                f"Error initiating TAN challenge: {response.status_code}, response: {response.text}"
+            )
         response.raise_for_status()
 
         # Print response for debugging
         response_data = response.json()
         print(f"Response JSON: {response_data}")
 
-        # Safely extract authentication info from headers
+        # Extract authentication URL
         auth_header = response.headers.get("x-once-authentication-info")
         if not auth_header:
             raise ValueError("Missing 'x-once-authentication-info' header in response")
@@ -216,6 +272,10 @@ class ComdirectClient:
 
         # Add the auth_url to the data for later use
         data["auth_url"] = auth_url
+        self.challenge_id = data.get("id")
+        self.tan_type = data.get("typ")
+        self.available_tan_types = data.get("availableTypes", [])
+        self.challenge_link = auth_url
         return data
 
     async def _wait_for_tan_confirmation(
@@ -271,7 +331,7 @@ class ComdirectClient:
                         print(
                             f"Unexpected status code: {response.status_code}, response: {response.text}"
                         )
-                        if response.status_code == 404:
+                        if response.status_code == httpx.codes.NOT_FOUND:
                             print(
                                 "Authentication challenge not found. It may have expired."
                             )
@@ -320,15 +380,32 @@ class ComdirectClient:
         """Check if the access token is expired."""
         return time.time() >= self.token_expires_at
 
-    async def get_account_balance(self) -> Dict[str, Any]:
+    async def get_account_balances(self) -> Dict[str, Any]:
         """Get the account balance."""
+
         if self.is_token_expired():
             await self.refresh_access_token()
 
         async with httpx.AsyncClient() as client:
+            url = f"{self.BASE_URL}/banking/clients/user/v2/accounts/balances"
+            headers = {
+                "Accept": "application/json",
+                "Authorization": f"Bearer {self.access_token}",
+                "x-http-request-info": json.dumps(
+                    {
+                        "clientRequestId": {
+                            "sessionId": self.session_id,
+                            "requestId": timestamp(),
+                        }
+                    }
+                ),
+            }
+            print(f"Headers: {headers}")
+            params = {"without-attr": "account"}
             response = await client.get(
-                f"{self.BASE_URL}/v1/accounts",
-                headers={"Authorization": f"Bearer {self.access_token}"},
+                url=url,
+                params=params,
+                headers=headers,
             )
             response.raise_for_status()
             return response.json()
