@@ -24,30 +24,52 @@ async def main():
     assert zugangsnummer is not None
     assert pin is not None
 
+    # 1️⃣ Client initialisieren
     client = ComdirectClient(client_id=client_id, client_secret=client_secret)
     print(f"Client initialized with ID: {client.client_id}\n")
-    data = await client.authenticate(username=zugangsnummer, password=pin)
-    print(f"Client authenticated: {data}\n")
-    data = await client.get_session_status()
-    print(f"retrieved session status: {data}\n")
-    data = await client.create_validate_session_tan()
-    print(f"Validated session TAN: {data}")
-    print(f"Session ID: {client.session_id}")
-    print(f"Access Token: {client.access_token}")
-    print(f"Refresh Token: {client.refresh_token}")
-    print(f"Token Expires At: {client.token_expires_at}")
-    print(f"Token Expired: {client.is_token_expired()}")
-    print(f"Session TAN: {client.session_tan_active}")
-    print(f"Two-Factor Authentication: {client.two_factor_auth}")
-    print(f"Scope: {client.scope}")
-    print(f"Available TAN types: {client.available_tan_types}")
-    print(f"TAN type: {client.tan_type}")
-    print(f"TAN challenge ID: {client.challenge_id}")
-    print(f"TAN challenge link: {client.challenge_link}")
 
+    # 2️⃣ Authentifizieren (primary access token, nur SESSION_RW Scope)
+    primary_tokens = await client.authenticate(
+        username=zugangsnummer, password=pin, scope="SESSION_RW"
+    )
+    print(f"Primary OAuth token erhalten: {primary_tokens}")
 
-#  data = await client.get_account_balances()
-#   print(f"Account Balance: {data}")
+    # 3️⃣ Session prüfen
+    session_status = await client.get_session_status()
+    print(f"Session Status: {session_status}\n")
+
+    """
+    Hinweis: Der Banking/Brokerage Access Token (cd_secondary) wird benötigt für
+    unkritische Banking-Anfragen (z. B. Kontostand abfragen). Kritische Aktionen (z. B. Überweisung)
+    benötigen zusätzlich eine TAN (2FA).
+    """
+
+    # 4️⃣ TAN (2FA) aktivieren – optional für kritische Aktionen
+    if not client.activated_2FA:
+        tan_response = await client.create_validate_session_tan()
+        print(f"Session TAN validated: {tan_response}\n")
+    else:
+        print("2FA already activated for this session\n")
+
+    # 5️⃣ Banking/Brokerage access token holen (cd_secondary)
+    try:
+        banking_tokens = await client.get_banking_brokerage_access()
+        print("Banking/Brokerage token erhalten:", banking_tokens)
+    except Exception as e:
+        print("Fehler beim Banking/Brokerage Access:", e)
+
+    # 6️⃣ Unkritische Banking-Anfrage (z. B. Kontostand)
+    try:
+        account_balances = await client.get_account_balances()
+        print("Kontostände:\n", account_balances)
+    except Exception as e:
+        print("Fehler beim Abrufen der Kontostände:", e)
+
+    for account_balance in account_balances.get("values", []):
+        account_id = account_balance.get("accountId")
+        balance = account_balance.get("balance", {}).get("value")
+        currency = account_balance.get("balance", {}).get("unit")
+        print(f"Account ID: {account_id}, Balance: {balance} {currency}")
 
 
 if __name__ == "__main__":
