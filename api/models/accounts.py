@@ -17,6 +17,7 @@ Classes:
 from decimal import Decimal
 
 from pydantic import BaseModel
+from pydantic_extra_types.currency_code import Currency
 
 
 class Paging(BaseModel):
@@ -37,7 +38,7 @@ class CreditLimit(BaseModel):
     """Credit limit information."""
 
     value: Decimal
-    unit: str
+    unit: Currency
 
 
 class Account(BaseModel):
@@ -57,28 +58,28 @@ class Balance(BaseModel):
     """Information about a bank account balance."""
 
     value: Decimal
-    unit: str
+    unit: Currency
 
 
 class BalanceEUR(BaseModel):
     """Information about a bank account balance in EUR."""
 
     value: Decimal
-    unit: str
+    unit: Currency
 
 
 class AvailableCashAmount(BaseModel):
     """Information about the available cash amount."""
 
     value: Decimal
-    unit: str
+    unit: Currency
 
 
 class AvailableCashAmountEUR(BaseModel):
     """Information about the available cash amount in EUR."""
 
     value: Decimal
-    unit: str
+    unit: Currency
 
 
 class Value(BaseModel):
