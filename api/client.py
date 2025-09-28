@@ -26,6 +26,7 @@ from typing import Any, Dict
 
 import httpx
 
+from .models.accounts import AccountBalances
 from .utils import timestamp
 
 
@@ -59,7 +60,7 @@ class ComdirectClient:
         self.available_tan_types: list[str] = []
         self.tan_type: str | None = None
         self.session_tan_active: bool = False
-        self.activated_2FA: bool = False
+        self.activated_2fa: bool = False
 
         # TAN challenge info, only valid between TAN initiation and activation
         self.challenge_id: str | None = None
@@ -137,7 +138,7 @@ class ComdirectClient:
             data = response.json()
             self.session_id = data[0].get("identifier")
             self.session_tan_active = data[0].get("sessionTanActive", False)
-            self.activated_2FA = data[0].get("activated2FA", False)
+            self.activated_2fa = data[0].get("activated2FA", False)
             return data
 
     async def create_validate_session_tan(self) -> Dict[str, Any]:
@@ -182,7 +183,7 @@ class ComdirectClient:
         data = await self._wait_for_tan_confirmation(auth_url)
         if data.get("status") == "AUTHENTICATED":
             self.session_tan_active = True
-            self.activated_2FA = True
+            self.activated_2fa = True
             print("TAN authentication successful, activating session TAN...")
         else:
             raise ValueError(f"Unexpected TAN status after confirmation: {data}")
@@ -453,7 +454,7 @@ class ComdirectClient:
         """Check if the access token is expired."""
         return time.time() >= self.token_expires_at
 
-    async def get_account_balances(self) -> Dict[str, Any]:
+    async def get_account_balances(self) -> AccountBalances:
         """Get the account balance."""
 
         if self.is_token_expired():
@@ -474,15 +475,39 @@ class ComdirectClient:
                 ),
                 "Content-Type": "application/json",
             }
-            print(f"Headers: {headers}")
-            params = {"without-attr": "account"}
-            # params = {"with-attr": "account"}
-            print(f"Query parameters: {params}")
             response = await client.get(
                 url=url,
                 headers=headers,
-                params=params,
             )
             response.raise_for_status()
-            balances = response.json()
-            return balances
+            account_balances = response.json()
+            return AccountBalances(**account_balances)
+
+    async def get_account_depots(self) -> Dict[str, Any]:
+        """Get the account depots."""
+
+        if self.is_token_expired():
+            await self.refresh_access_token()
+
+        async with httpx.AsyncClient() as client:
+            url = f"{self.BASE_URL}/brokerage/clients/user/v3/depots"
+            headers = {
+                "Accept": "application/json",
+                "Authorization": f"Bearer {self.banking_access_token}",
+                "x-http-request-info": json.dumps(
+                    {
+                        "clientRequestId": {
+                            "sessionId": self.session_id,
+                            "requestId": timestamp(),
+                        }
+                    }
+                ),
+                "Content-Type": "application/json",
+            }
+            response = await client.get(
+                url=url,
+                headers=headers,
+            )
+            response.raise_for_status()
+            depots = response.json()
+            return depots

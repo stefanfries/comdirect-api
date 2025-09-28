@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 
 import dotenv
@@ -45,7 +46,7 @@ async def main():
     """
 
     # 4️⃣ TAN (2FA) aktivieren – optional für kritische Aktionen
-    if not client.activated_2FA:
+    if not client.activated_2fa:
         tan_response = await client.create_validate_session_tan()
         print(f"Session TAN validated: {tan_response}\n")
     else:
@@ -60,16 +61,41 @@ async def main():
 
     # 6️⃣ Unkritische Banking-Anfrage (z. B. Kontostand)
     try:
+        print("\nRufe Kontostände ab...")
         account_balances = await client.get_account_balances()
-        print("Kontostände:\n", account_balances)
+        account_balances_json = json.dumps(account_balances, indent=4)
+        print("Kontostände (JSON):\n", account_balances_json)
+        print("\n")
+
     except Exception as e:
         print("Fehler beim Abrufen der Kontostände:", e)
 
-    for account_balance in account_balances.get("values", []):
-        account_id = account_balance.get("accountId")
-        balance = account_balance.get("balance", {}).get("value")
-        currency = account_balance.get("balance", {}).get("unit")
-        print(f"Account ID: {account_id}, Balance: {balance} {currency}")
+    for balance in account_balances.values:
+        account_id = balance.accountId
+        balance_value = balance.balance.value
+        currency = balance.balance.unit
+        print(f"Account ID: {account_id}, Balance: {balance_value} {currency}")
+
+    # 7️⃣ Depotinformationen abrufen
+    try:
+        print("\nRufe Depotinformationen ab...")
+        depots = await client.get_account_depots()
+        depots_json = json.dumps(depots, indent=4)
+        print("Depots:\n", depots_json)
+    except Exception as e:
+        print("Fehler beim Abrufen der Depots:", e)
+
+    for depot in depots.get("values", []):
+        print("Depotinformationen\n", depot)
+        depot_id = depot.get("depotId")
+        depot_display_id = depot.get("depotDisplayId")
+        depot_type = depot.get("depotType")
+        target_market = depot.get("targetMarket")
+
+        print(f"Depot ID: {depot_id}")
+        print(f"Depot Display ID: {depot_display_id}")
+        print(f"Depot Type: {depot_type}")
+        print(f"Target Market: {target_market}")
 
 
 if __name__ == "__main__":
