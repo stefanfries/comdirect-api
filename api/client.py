@@ -27,6 +27,7 @@ from typing import Any, Dict
 import httpx
 
 from .models.accounts import AccountBalances
+from .models.depots import AccountDepots
 from .utils import timestamp
 
 
@@ -483,7 +484,7 @@ class ComdirectClient:
             account_balances = response.json()
             return AccountBalances(**account_balances)
 
-    async def get_account_depots(self) -> Dict[str, Any]:
+    async def get_account_depots(self) -> AccountDepots:
         """Get the account depots."""
 
         if self.is_token_expired():
@@ -510,4 +511,4 @@ class ComdirectClient:
             )
             response.raise_for_status()
             depots = response.json()
-            return depots
+            return AccountDepots(**depots)

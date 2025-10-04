@@ -1,5 +1,4 @@
 import asyncio
-import json
 import os
 
 import dotenv
@@ -39,12 +38,6 @@ async def main():
     session_status = await client.get_session_status()
     print(f"Session Status: {session_status}\n")
 
-    """
-    Hinweis: Der Banking/Brokerage Access Token (cd_secondary) wird benötigt für
-    unkritische Banking-Anfragen (z. B. Kontostand abfragen). Kritische Aktionen (z. B. Überweisung)
-    benötigen zusätzlich eine TAN (2FA).
-    """
-
     # 4️⃣ TAN (2FA) aktivieren – optional für kritische Aktionen
     if not client.activated_2fa:
         tan_response = await client.create_validate_session_tan()
@@ -63,7 +56,7 @@ async def main():
     try:
         print("\nRufe Kontostände ab...")
         account_balances = await client.get_account_balances()
-        account_balances_json = json.dumps(account_balances, indent=4)
+        account_balances_json = account_balances.model_dump_json(indent=4)
         print("Kontostände (JSON):\n", account_balances_json)
         print("\n")
 
@@ -79,18 +72,18 @@ async def main():
     # 7️⃣ Depotinformationen abrufen
     try:
         print("\nRufe Depotinformationen ab...")
-        depots = await client.get_account_depots()
-        depots_json = json.dumps(depots, indent=4)
-        print("Depots:\n", depots_json)
+        account_depots = await client.get_account_depots()
+        account_depots_json = account_depots.model_dump_json(indent=4)
+        print("Depots:\n", account_depots_json)
     except Exception as e:
         print("Fehler beim Abrufen der Depots:", e)
 
-    for depot in depots.get("values", []):
+    for depot in account_depots.values:
         print("Depotinformationen\n", depot)
-        depot_id = depot.get("depotId")
-        depot_display_id = depot.get("depotDisplayId")
-        depot_type = depot.get("depotType")
-        target_market = depot.get("targetMarket")
+        depot_id = depot.depotId
+        depot_display_id = depot.depotDisplayId
+        depot_type = depot.depotType
+        target_market = depot.targetMarket
 
         print(f"Depot ID: {depot_id}")
         print(f"Depot Display ID: {depot_display_id}")
