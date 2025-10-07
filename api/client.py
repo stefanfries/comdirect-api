@@ -22,7 +22,7 @@ import asyncio
 import json
 import time
 import uuid
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 import httpx
 
@@ -66,6 +66,26 @@ class ComdirectClient:
         # TAN challenge info, only valid between TAN initiation and activation
         self.challenge_id: str | None = None
         self.challenge_link: str | None = None
+
+    def _request_headers(
+        self, token: str, extra: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
+        base_hdr = {
+            "Accept": "application/json",
+            "Authorization": f"Bearer {token}",
+            "x-http-request-info": json.dumps(
+                {
+                    "clientRequestId": {
+                        "sessionId": self.session_id,
+                        "requestId": timestamp(),
+                    }
+                }
+            ),
+            "Content-Type": "application/json",
+        }
+        if extra:
+            base_hdr.update(extra)
+        return base_hdr
 
     async def authenticate(
         self, username: str, password: str, scope: str = "SESSION_RW"
@@ -115,21 +135,15 @@ class ComdirectClient:
         Retrieve session status
         See chapter 2.2 of comdirect REST API documentation for details.
         """
-        self.session_id = uuid.uuid4().hex  # 32 hex chars
         url = f"{self.BASE_URL}/session/clients/user/v1/sessions"
-        headers = {
-            "Accept": "application/json",
-            "Authorization": f"Bearer {self.primary_access_token}",
-            "x-http-request-info": json.dumps(
-                {
-                    "clientRequestId": {
-                        "sessionId": self.session_id,
-                        "requestId": timestamp(),
-                    }
-                }
-            ),
-            "Content-Type": "application/json",
-        }
+
+        self.session_id = uuid.uuid4().hex  # 32 hex chars
+
+        if self.primary_access_token is None:
+            raise ValueError("No access token available. Please authenticate first.")
+
+        headers = self._request_headers(self.primary_access_token)
+
         async with httpx.AsyncClient(follow_redirects=False) as client:
             response = await client.get(url, headers=headers)
             # Debugging: Show the response status code and text in case of an error
@@ -198,25 +212,19 @@ class ComdirectClient:
         See chapter 2.4 of comdirect REST API documentation for details.
         """
         print(f"Activating session TAN with challenge ID: {challenge_id}")
-        if not self.session_id:
-            raise ValueError(
-                "No session ID available. Please establish a session first."
-            )
+
         url = f"{self.BASE_URL}/session/clients/user/v1/sessions/{self.session_id}"
-        headers = {
-            "Accept": "application/json",
-            "Authorization": f"Bearer {self.primary_access_token}",
-            "x-http-request-info": json.dumps(
-                {
-                    "clientRequestId": {
-                        "sessionId": self.session_id,
-                        "requestId": timestamp(),
-                    }
-                }
-            ),
-            "Content-Type": "application/json",
-            "x-once-authentication-info": json.dumps({"id": challenge_id}),
-        }
+
+        if not self.session_id:
+            raise ValueError("No session ID available. Please establish session first.")
+
+        if self.primary_access_token is None:
+            raise ValueError("No access token available. Please authenticate first.")
+
+        headers = self._request_headers(
+            self.primary_access_token,
+            extra={"x-once-authentication-info": json.dumps({"id": challenge_id})},
+        )
         payload = {
             "identifier": self.session_id,
             "sessionTanActive": True,
@@ -241,6 +249,9 @@ class ComdirectClient:
         Stores challenge ID and link in self.challenge_id / self.challenge_link.
         Returns dict containing the challenge ID, type, and link.
         """
+
+        url = f"{self.BASE_URL}/session/clients/user/v1/sessions/{self.session_id}/validate"
+
         if not self.session_id:
             raise ValueError(
                 "No session ID available. Please establish a session first."
@@ -248,20 +259,8 @@ class ComdirectClient:
         if not self.primary_access_token:
             raise ValueError("No access token available. Please authenticate first.")
 
-        url = f"{self.BASE_URL}/session/clients/user/v1/sessions/{self.session_id}/validate"
-        headers = {
-            "Accept": "application/json",
-            "Authorization": f"Bearer {self.primary_access_token}",
-            "x-http-request-info": json.dumps(
-                {
-                    "clientRequestId": {
-                        "sessionId": self.session_id,
-                        "requestId": timestamp(),
-                    }
-                }
-            ),
-            "Content-Type": "application/json",
-        }
+        headers = self._request_headers(self.primary_access_token)
+
         payload = {
             "identifier": self.session_id,
             "sessionTanActive": True,
@@ -316,22 +315,12 @@ class ComdirectClient:
         """Wait for TAN confirmation by polling the authentication URL."""
         print(f"Waiting for TAN confirmation using URL: {auth_url}")
 
-        # Construct the full URL (auth_url is relative)
         full_url = f"https://api.comdirect.de{auth_url}"
 
-        headers = {
-            "Accept": "application/json",
-            "Authorization": f"Bearer {self.primary_access_token}",
-            "x-http-request-info": json.dumps(
-                {
-                    "clientRequestId": {
-                        "sessionId": self.session_id,
-                        "requestId": timestamp(),
-                    }
-                }
-            ),
-            "Content-Type": "application/json",
-        }
+        if self.primary_access_token is None:
+            raise ValueError("No access token available. Please authenticate first.")
+
+        headers = self._request_headers(self.primary_access_token)
 
         for attempt in range(max_attempts):
             try:
@@ -463,19 +452,13 @@ class ComdirectClient:
 
         async with httpx.AsyncClient() as client:
             url = f"{self.BASE_URL}/banking/clients/user/v2/accounts/balances"
-            headers = {
-                "Accept": "application/json",
-                "Authorization": f"Bearer {self.banking_access_token}",
-                "x-http-request-info": json.dumps(
-                    {
-                        "clientRequestId": {
-                            "sessionId": self.session_id,
-                            "requestId": timestamp(),
-                        }
-                    }
-                ),
-                "Content-Type": "application/json",
-            }
+
+            if not self.banking_access_token:
+                raise ValueError(
+                    "No banking access token available. Please obtain banking access first."
+                )
+            headers = self._request_headers(self.banking_access_token)
+
             response = await client.get(
                 url=url,
                 headers=headers,
@@ -492,19 +475,12 @@ class ComdirectClient:
 
         async with httpx.AsyncClient() as client:
             url = f"{self.BASE_URL}/brokerage/clients/user/v3/depots"
-            headers = {
-                "Accept": "application/json",
-                "Authorization": f"Bearer {self.banking_access_token}",
-                "x-http-request-info": json.dumps(
-                    {
-                        "clientRequestId": {
-                            "sessionId": self.session_id,
-                            "requestId": timestamp(),
-                        }
-                    }
-                ),
-                "Content-Type": "application/json",
-            }
+            if not self.banking_access_token:
+                raise ValueError(
+                    "No banking access token available. Please obtain banking access first."
+                )
+            headers = self._request_headers(self.banking_access_token)
+
             response = await client.get(
                 url=url,
                 headers=headers,
