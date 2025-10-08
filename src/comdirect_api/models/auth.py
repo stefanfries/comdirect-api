@@ -24,7 +24,7 @@ class AuthResponse(BaseModel):
     expires_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     @model_validator(mode="after")
-    def compute_expiry(cls, values):
+    def compute_expiry(cls, values):  # ignore[no-self-argument]
         """Derive `expires_at` from `expires_in` automatically."""
         now = datetime.now(timezone.utc)
         values.expires_at = now + timedelta(seconds=values.expires_in - 30)

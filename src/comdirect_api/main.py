@@ -3,7 +3,7 @@ import os
 
 import dotenv
 
-from api.client import ComdirectClient
+from .client import ComdirectClient
 
 
 async def main():
