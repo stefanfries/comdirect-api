@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 
 
 class AuthResponse(BaseModel):
@@ -21,14 +21,10 @@ class AuthResponse(BaseModel):
     kontaktId: Optional[str] = Field(None, alias="kontaktId")
 
     # Computed field (not in the Comdirect API response)
-    expires_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-
-    @model_validator(mode="after")
-    def compute_expiry(cls, values):  # ignore[no-self-argument]
-        """Derive `expires_at` from `expires_in` automatically."""
-        now = datetime.now(timezone.utc)
-        values.expires_at = now + timedelta(seconds=values.expires_in - 30)
-        return values
+    @property
+    def expires_at(self) -> datetime:
+        """Calculate the exact expiration datetime based on 'expires_in'."""
+        return datetime.now(timezone.utc) + timedelta(seconds=self.expires_in - 30)
 
 
 class TokenState(BaseModel):
@@ -44,7 +40,7 @@ class TokenState(BaseModel):
     token_expires_at: Optional[float] = None  # epoch timestamp
     kdnr: Optional[str] = None
     bpid: Optional[str] = None
-    kontaktId: Optional[str] = Field(None, alias="kontaktId")
+    kontaktid: Optional[str] = Field(None, alias="kontaktId")
 
     def update_from_auth(self, auth: AuthResponse):
         """Update token state after authentication or token refresh."""
@@ -54,10 +50,3 @@ class TokenState(BaseModel):
         self.kdnr = auth.kdnr
         self.bpid = auth.bpid
         self.kontaktid = auth.kontaktId
-
-    def is_expired(self, margin_seconds: int = 60) -> bool:
-        """Check if the token is expired or close to expiry."""
-        if not self.token_expires_at:
-            return True
-        now = datetime.now(timezone.utc).timestamp()
-        return now >= (self.token_expires_at - margin_seconds)

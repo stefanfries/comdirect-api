@@ -4,14 +4,15 @@ import os
 import dotenv
 
 from .client import ComdirectClient
+from .core.settings import settings
 
 
 async def main():
-    dotenv.load_dotenv()
-    client_id = os.getenv("CLIENT_ID")
-    client_secret = os.getenv("CLIENT_SECRET")
-    zugangsnummer = os.getenv("ZUGANGSNUMMER")
-    pin = os.getenv("PIN")
+
+    client_id = settings.CLIENT_ID.get_secret_value()
+    client_secret = settings.CLIENT_SECRET.get_secret_value()
+    zugangsnummer = settings.ZUGANGSNUMMER.get_secret_value()
+    pin = settings.PIN.get_secret_value()
 
     if not all([client_id, client_secret, zugangsnummer, pin]):
         raise ValueError(
