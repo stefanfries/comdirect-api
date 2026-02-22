@@ -22,7 +22,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from api.client import ComdirectClient
+from comdirect_api.client import ComdirectClient
 
 
 @pytest.mark.asyncio
@@ -57,7 +57,7 @@ async def test_authenticate_success(client_instance, creds):
 
         # Verify the result
         assert result == mock_response_data
-        assert client_instance.access_token == "test_access_token"
+        assert client_instance.primary_access_token == "test_access_token"
         assert client_instance.refresh_token == "test_refresh_token"
         assert client_instance.token_expires_at > time.time()
         assert client_instance.scope == "read write"
@@ -75,6 +75,7 @@ async def test_authenticate_success(client_instance, creds):
                 "username": creds["username"],
                 "password": creds["password"],
                 "grant_type": "password",
+                "scope": "SESSION_RW",
             },
         )
 
@@ -102,7 +103,7 @@ async def test_authenticate_http_error(client_instance, creds):
             await client_instance.authenticate(creds["username"], creds["password"])
 
         # Verify tokens are not set on error
-        assert client_instance.access_token is None
+        assert client_instance.primary_access_token is None
         assert client_instance.refresh_token is None
         assert client_instance.token_expires_at == 0
 
@@ -171,7 +172,7 @@ async def test_authenticate_missing_tokens_in_response(client_instance, creds):
 
         # Call authenticate and check that tokens are not set due to missing fields
         await client_instance.authenticate(creds["username"], creds["password"])
-        assert client_instance.access_token is None
+        assert client_instance.primary_access_token is None
         assert client_instance.refresh_token is None
 
 
@@ -227,8 +228,9 @@ async def test_authenticate_token_expiration_calculation(client_instance, creds)
         after_time = time.time()
 
         # Verify token expiration is set correctly (within reasonable bounds)
-        expected_min = before_time + expires_in
-        expected_max = after_time + expires_in
+        # Note: Client subtracts 30 seconds for safety margin
+        expected_min = before_time + expires_in - 30
+        expected_max = after_time + expires_in - 30
 
         assert expected_min <= client_instance.token_expires_at <= expected_max
 
@@ -257,7 +259,9 @@ async def test_authenticate_debug_output_on_error(client_instance, creds):
             await client_instance.authenticate(creds["username"], creds["password"])
 
         # Verify debug output was printed
-        mock_print.assert_called_with("Error: 500, response: Internal Server Error")
+        mock_print.assert_called_with(
+            "Authentication failed. Status code: 500, response: Internal Server Error"
+        )
 
 
 def test_client_initialization():
@@ -266,7 +270,7 @@ def test_client_initialization():
 
     assert test_client.client_id == "test_id"
     assert test_client.client_secret == "test_secret"
-    assert test_client.access_token is None
+    assert test_client.primary_access_token is None
     assert test_client.refresh_token is None
     assert test_client.token_expires_at == 0
     assert test_client.session_id is None

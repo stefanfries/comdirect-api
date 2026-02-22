@@ -1,8 +1,0 @@
-httpx==0.28.1
-pydantic==2.11.9
-pydantic-settings==2.11.0
-pydantic-extra-types==2.10.5
-pycountry==24.6.1
-python-dotenv==1.1.0
-pytest==8.4.1
-pytest-asyncio==1.0.0

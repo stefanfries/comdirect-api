@@ -13,8 +13,9 @@ Dependencies:
     - json: For encoding/decoding request and response data.
     - .utils.timestamp: Utility function for generating timestamps.
 Usage:
-    Instantiate `ComdirectClient` with your client credentials, then use its methods to authenticate,
-    manage sessions, validate TANs, refresh tokens, and retrieve account balances.
+    Instantiate `ComdirectClient` with your client credentials, then use its
+    methods to authenticate, manage sessions, validate TANs, refresh tokens,
+    and retrieve account balances.
 
 """
 
@@ -22,7 +23,7 @@ import asyncio
 import json
 import time
 import uuid
-from typing import Any, Dict
+from typing import Any
 
 import httpx
 
@@ -89,7 +90,7 @@ class ComdirectClient:
 
     async def authenticate(
         self, username: str, password: str, scope: str = "SESSION_RW"
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """
         Authenticate with Comdirect OAuth2 and retrieve primary access/refresh tokens.
         Returns a dict containing primary tokens and expiration info.
@@ -113,7 +114,8 @@ class ComdirectClient:
             # Debugging: Show the response status code and text in case of an error
             if response.status_code != httpx.codes.OK:
                 print(
-                    f"Authentication failed. Status code: {response.status_code}, response: {response.text}"
+                    f"Authentication failed. Status code: {response.status_code}, "
+                    f"response: {response.text}"
                 )
             response.raise_for_status()
             data = response.json()
@@ -130,7 +132,7 @@ class ComdirectClient:
             self.kontaktid = data.get("kontaktId")  # Interne Identifikationsnummer
             return data
 
-    async def get_session_status(self) -> Dict[str, Any]:
+    async def get_session_status(self) -> dict[str, Any]:
         """
         Retrieve session status
         See chapter 2.2 of comdirect REST API documentation for details.
@@ -156,7 +158,7 @@ class ComdirectClient:
             self.activated_2fa = data[0].get("activated2FA", False)
             return data
 
-    async def create_validate_session_tan(self) -> Dict[str, Any]:
+    async def create_validate_session_tan(self) -> dict[str, Any]:
         """
         Orchestrates the TAN activation workflow:
         1. Initiates the TAN challenge.
@@ -243,7 +245,7 @@ class ComdirectClient:
             self.session_access_token = data.get("access_token")
             return data
 
-    async def _initiate_tan_challenge(self) -> Dict[str, Any]:
+    async def _initiate_tan_challenge(self) -> dict[str, Any]:
         """
         Start a TAN challenge for the client session.
         Stores challenge ID and link in self.challenge_id / self.challenge_link.
@@ -311,7 +313,7 @@ class ComdirectClient:
 
     async def _wait_for_tan_confirmation(
         self, auth_url: str, max_attempts: int = 30, delay: int = 2
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Wait for TAN confirmation by polling the authentication URL."""
         print(f"Waiting for TAN confirmation using URL: {auth_url}")
 
@@ -351,7 +353,8 @@ class ComdirectClient:
                                 continue
                     else:
                         print(
-                            f"Unexpected status code: {response.status_code}, response: {response.text}"
+                            f"Unexpected status code: {response.status_code}, "
+                            f"response: {response.text}"
                         )
                         if response.status_code == httpx.codes.NOT_FOUND:
                             print(
@@ -367,10 +370,11 @@ class ComdirectClient:
                 await asyncio.sleep(delay)
 
         raise TimeoutError(
-            f"TAN confirmation timed out after {max_attempts} attempts ({max_attempts * delay} seconds)"
+            f"TAN confirmation timed out after {max_attempts} attempts "
+            f"({max_attempts * delay} seconds)"
         )
 
-    async def get_banking_brokerage_access(self) -> Dict[str, Any]:
+    async def get_banking_brokerage_access(self) -> dict[str, Any]:
         """
         Get an access token with BANKING/BROKERAGE permissions using the cd_secondary flow.
         See chapter 2.5 of comdirect REST API documentation for details.
@@ -387,7 +391,8 @@ class ComdirectClient:
             "client_id": self.client_id,
             "client_secret": self.client_secret,
             "grant_type": "cd_secondary",
-            "token": self.primary_access_token,  # must be the primary OAuth token from initial authentication
+            # Must be the primary OAuth token from initial authentication
+            "token": self.primary_access_token,
         }
         async with httpx.AsyncClient(follow_redirects=False) as client:
             response = await client.post(self.OAUTH_URL, headers=headers, data=data)
@@ -408,7 +413,7 @@ class ComdirectClient:
             self.kontaktid = data.get("kontaktId")  # Interne Identifikationsnummer
             return data
 
-    async def refresh_access_token(self) -> Dict[str, Any]:
+    async def refresh_access_token(self) -> dict[str, Any]:
         """Refresh the access token using the refresh token."""
         if not self.refresh_token:
             raise ValueError("No refresh token available. Please authenticate first.")
@@ -431,7 +436,7 @@ class ComdirectClient:
             self.kontaktid = data.get("kontaktId")  # Interne Identifikationsnummer
             return data
 
-    def _update_tokens(self, data: Dict[str, Any]):
+    def _update_tokens(self, data: dict[str, Any]):
         """Update the access token, refresh token, and expiration time."""
         self.primary_access_token = data.get("access_token")
         self.refresh_token = data.get("refresh_token")

@@ -16,84 +16,86 @@ Classes:
 
 from decimal import Decimal
 
-from pydantic import BaseModel
+from pydantic import Field
 from pydantic_extra_types.currency_code import ISO4217
 
+from . import ComdirectBaseModel
 
-class Paging(BaseModel):
+
+class Paging(ComdirectBaseModel):
     """Paging information for paginated responses."""
 
     index: int
     matches: int
 
 
-class AccountType(BaseModel):
+class AccountType(ComdirectBaseModel):
     """Type of the account."""
 
     key: str
     text: str
 
 
-class CreditLimit(BaseModel):
+class CreditLimit(ComdirectBaseModel):
     """Credit limit information."""
 
     value: Decimal
     unit: ISO4217
 
 
-class Account(BaseModel):
+class Account(ComdirectBaseModel):
     """Information about a Comdirect bank account."""
 
-    accountId: str
-    accountDisplayId: str
+    account_id: str
+    account_display_id: str
     currency: str
-    clientId: str
-    accountType: AccountType
+    client_id: str
+    account_type: AccountType
     iban: str
     bic: str
-    creditLimit: CreditLimit
+    credit_limit: CreditLimit
 
 
-class Balance(BaseModel):
+class Balance(ComdirectBaseModel):
     """Information about a bank account balance."""
 
     value: Decimal
     unit: ISO4217
 
 
-class BalanceEUR(BaseModel):
+class BalanceEUR(ComdirectBaseModel):
     """Information about a bank account balance in EUR."""
 
     value: Decimal
     unit: ISO4217 = ISO4217("EUR")
 
 
-class AvailableCashAmount(BaseModel):
+class AvailableCashAmount(ComdirectBaseModel):
     """Information about the available cash amount."""
 
     value: Decimal
     unit: ISO4217
 
 
-class AvailableCashAmountEUR(BaseModel):
+class AvailableCashAmountEUR(ComdirectBaseModel):
     """Information about the available cash amount in EUR."""
 
     value: Decimal
     unit: ISO4217 = ISO4217("EUR")
 
 
-class AccountBalance(BaseModel):
+class AccountBalance(ComdirectBaseModel):
     """A single account balance entry."""
 
     account: Account
-    accountId: str
+    account_id: str
     balance: Balance
-    balanceEUR: BalanceEUR
-    availableCashAmount: AvailableCashAmount
-    availableCashAmountEUR: AvailableCashAmountEUR
+    balance_eur: BalanceEUR = Field(alias="balanceEUR")
+    available_cash_amount: AvailableCashAmount
+    available_cash_amount_eur: AvailableCashAmountEUR = Field(alias="availableCashAmountEUR")
 
 
-class AccountBalances(BaseModel):
+class AccountBalances(ComdirectBaseModel):
     """Account balances response model."""
 
     paging: Paging

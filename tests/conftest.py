@@ -8,7 +8,7 @@ an instance of the ComdirectClient with those credentials.
 
 import pytest
 
-from api.client import ComdirectClient
+from comdirect_api.client import ComdirectClient
 
 
 # pylint: disable=redefined-outer-name
