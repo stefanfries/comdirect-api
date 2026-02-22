@@ -1,6 +1,6 @@
 """Messages models for Comdirect API."""
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class DocumentMetadata(BaseModel):
@@ -23,8 +23,7 @@ class DocumentMetadata(BaseModel):
         description="Does a predocument exist?",
     )
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class Document(BaseModel):
@@ -65,8 +64,7 @@ class Document(BaseModel):
         description="Optional information about the document",
     )
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class Documents(BaseModel):
@@ -82,5 +80,4 @@ class Documents(BaseModel):
         default=None, description="Aggregated information"
     )
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
