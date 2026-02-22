@@ -1,7 +1,7 @@
 import asyncio
 
 from .client import ComdirectClient
-from .core.settings import settings
+from .settings import settings
 
 
 async def main():
