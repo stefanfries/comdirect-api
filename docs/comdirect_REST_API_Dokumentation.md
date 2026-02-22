@@ -325,7 +325,6 @@ Beispiel Body
 "severity": "ERROR",
 "key": "fehler-erforderliche-tgf-fehlt",
 
-
 "message": "Für das von Ihnen gewünschte Wertpapier ist eine
 Vereinbarung zu Finanztermingeschäften erforderlich. Das entsprechende
 Formular finden Sie unter comdirect.de/formulare",
@@ -530,23 +529,28 @@ REQUEST (= Anlage Validierung einer Session-TAN)
 Parameter
 Type
 ```
-```
+
+```text
 Parameter
 Name
 ```
-```
+
+```text
 Data
 Type
 ```
-```
+
+```text
 Description
 ```
-```
+
+```text
 Path clientId String Literal „user“
 sessionId String „identifier“ aus dem Session-Objekt
 Body Session Session-Objekt, in dem der identifier den Wert der sessionId hat
 und sessionTanActive und activated2FA den Wert „true“ erhält.
 ```
+
 Beispiel Header:
 Accept:application/json
 Authorization:Bearer 1234567890__Access-Token__
@@ -566,10 +570,11 @@ RESPONSE (= Im Falle einer inaktiven Session-TAN wird eine TAN-Challenge erzeugt
 Content-Type: application/json
 JSON-Model:
 
-```
+```text
 Objects Nested Objects Keys Description
 Session JSON-Objekt Session
 ```
+
 Beispiel Response-Header (Auszug):
 x-once-authentication-info:
 { "id":" 7654321 ",
@@ -581,12 +586,12 @@ x-once-authentication-info:
 Im Response-Header werden im "x-once-authentication-info"–Feld folgende Daten
 zurückgegeben:
 
-```
+```text
  id: die ID der TAN-Challenge; diese ist in jedem Fall beim Aufruf der anschließenden Schnittstelle
 zur Aktivierung der Session-TAN zu übergeben
 ```
 
-```
+```text
  typ: der TAN-Typ; mögliche Ausprägungen sind M_TAN, P_TAN, P_TAN_PUSH; ohne weitere
 Angaben im Request-Header dieser Schnittstelle wird immer eine TAN Ihres favorisierten TAN-
 Verfahrens erzeugt
@@ -601,6 +606,7 @@ o x-once-authentication-info Response Header im Falle M_TAN:
 567XXXX","availableTypes":["verfügbare TAN-Verfahren"]}
  availableTypes: alle Ihre aktivierten TAN-Verfahren
 ```
+
 Um auf ein anderes TAN-Verfahren zu wechseln (Beispiel: P_TAN), wird diese Validation-Schnittstelle
 erneut aufgerufen. Dabei muss im Header folgende Informationen hinzugefügt werden:
 
@@ -618,11 +624,12 @@ Beschreibung: Die Schnittstelle dient zur Aktivierung der Session-TAN.
 
 REQUEST (= Aktivierung der Session-TAN)
 
-```
+```text
 Parameter
 Type
 ```
-```
+
+```text
 Parameter
 Name
 ```
