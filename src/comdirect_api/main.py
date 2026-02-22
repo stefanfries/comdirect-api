@@ -50,8 +50,8 @@ async def main():
 
         for balance in account_balances.values:
             account_id = balance.account_id
-            balance_value = balance.balance.get("value")
-            currency = balance.balance.get("unit")
+            balance_value = balance.balance.value
+            currency = balance.balance.unit
             print(f"Account ID: {account_id}, Balance: {balance_value} {currency}")
 
         # Get transactions for first account
