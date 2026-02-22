@@ -1,13 +1,52 @@
 import asyncio
 import logging
+import re
+import sys
 
 from .client import ComdirectClient
+
+# Ensure UTF-8 encoding for console output (Windows compatibility)
+if sys.platform == "win32":
+    sys.stdout.reconfigure(encoding="utf-8")
 
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,  # Change to DEBUG for more detailed output
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
+
+
+def format_remittance_info(remittance_info: str | None) -> str:
+    """Format remittance info by parsing line number markers (01, 02, 03, etc.).
+    
+    Banking systems use multi-line remittance info with prefixes like:
+    '01Purpose line 1            02Purpose line 2'
+    
+    This function splits them into a cleaner format.
+    
+    Args:
+        remittance_info: Raw remittance information string
+        
+    Returns:
+        Formatted string with lines separated by ' | '
+    """
+    if not remittance_info:
+        return "N/A"
+    
+    # Remove line number prefixes and split into parts
+    # Pattern: 2 digits followed by non-digit content until next 2-digit prefix
+    # This handles: "01Text here    02More text    03Even more"
+    parts = re.split(r'\d{2}', remittance_info)
+    
+    # Filter out empty strings and clean whitespace
+    cleaned_parts = [part.strip() for part in parts if part.strip()]
+    
+    # Limit to first 3 meaningful parts
+    if cleaned_parts:
+        return " | ".join(cleaned_parts[:3])
+    
+    # Fallback: just return cleaned string
+    return remittance_info.strip()[:100]
 
 
 async def main():
@@ -49,7 +88,7 @@ async def main():
                     date_str = txn.booking_date if txn.booking_date else "N/A"
                     amount_val = txn.amount.get("value") if txn.amount else "N/A"
                     amount_unit = txn.amount.get("unit") if txn.amount else ""
-                    info = txn.remittance_info[:50] if txn.remittance_info else "N/A"
+                    info = format_remittance_info(txn.remittance_info)
                     print(f"  - {date_str}: {amount_val} {amount_unit} - {info}")
             except Exception as e:
                 print(f"No transactions found: {e}")
