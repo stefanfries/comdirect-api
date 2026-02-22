@@ -13,10 +13,7 @@ import time
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import httpx
 import pytest
-
-from comdirect_api.client import ComdirectClient
 
 
 @pytest.mark.asyncio
@@ -138,7 +135,7 @@ async def test_get_depot_positions_with_filters(client_instance):
     with patch("httpx.AsyncClient") as mock_client_class:
         mock_client_class.return_value.__aenter__.return_value = mock_http_client
 
-        result = await client_instance.get_depot_positions(
+        _ = await client_instance.get_depot_positions(
             depot_id="depot_123",
             instrument_id="A1B2C3",
             with_attr="instrument",
@@ -258,7 +255,7 @@ async def test_get_depot_transactions_with_filters(client_instance):
     with patch("httpx.AsyncClient") as mock_client_class:
         mock_client_class.return_value.__aenter__.return_value = mock_http_client
 
-        result = await client_instance.get_depot_transactions(
+        _ = await client_instance.get_depot_transactions(
             depot_id="depot_123",
             isin="DE000A1B2C34",
             wkn="A1B2C3",
@@ -340,7 +337,7 @@ async def test_get_instrument_with_attributes(client_instance):
     with patch("httpx.AsyncClient") as mock_client_class:
         mock_client_class.return_value.__aenter__.return_value = mock_http_client
 
-        result = await client_instance.get_instrument(
+        _ = await client_instance.get_instrument(
             instrument_id="A1B2C3",
             with_attr=["derivativeData", "fundDistribution"],
             without_attr=["staticData"],

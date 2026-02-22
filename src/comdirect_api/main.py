@@ -1,6 +1,13 @@
 import asyncio
+import logging
 
 from .client import ComdirectClient
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,  # Change to DEBUG for more detailed output
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
 
 
 async def main():

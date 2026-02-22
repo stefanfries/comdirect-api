@@ -170,10 +170,11 @@ async def test_authenticate_missing_tokens_in_response(client_instance, creds):
     with patch("httpx.AsyncClient") as mock_client_class:
         mock_client_class.return_value.__aenter__.return_value = mock_http_client
 
-        # Call authenticate and check that tokens are not set due to missing fields
-        await client_instance._authenticate(creds["username"], creds["password"])
-        assert client_instance.primary_access_token is None
-        assert client_instance.refresh_token is None
+        # Call authenticate and expect ValidationError for missing required fields
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            await client_instance._authenticate(creds["username"], creds["password"])
 
 
 @pytest.mark.asyncio
@@ -229,15 +230,16 @@ async def test_authenticate_token_expiration_calculation(client_instance, creds)
 
         # Verify token expiration is set correctly (within reasonable bounds)
         # Note: Client subtracts 30 seconds for safety margin
-        expected_min = before_time + expires_in - 30
-        expected_max = after_time + expires_in - 30
+        # Allow small tolerance for floating point precision
+        expected_min = before_time + expires_in - 30 - 0.1  # 100ms tolerance
+        expected_max = after_time + expires_in - 30 + 0.1
 
         assert expected_min <= client_instance.token_expires_at <= expected_max
 
 
 @pytest.mark.asyncio
 async def test_authenticate_debug_output_on_error(client_instance, creds):
-    """Test that debug information is printed on HTTP errors."""
+    """Test that debug information is logged on HTTP errors."""
     # Mock error response
     mock_response = MagicMock()
     mock_response.status_code = 500
@@ -250,17 +252,19 @@ async def test_authenticate_debug_output_on_error(client_instance, creds):
     mock_http_client.post.return_value = mock_response
 
     with patch("httpx.AsyncClient") as mock_client_class, patch(
-        "builtins.print"
-    ) as mock_print:
+        "comdirect_api.client.logger"
+    ) as mock_logger:
         mock_client_class.return_value.__aenter__.return_value = mock_http_client
 
         # Call authenticate and expect it to raise an exception
         with pytest.raises(httpx.HTTPStatusError):
             await client_instance._authenticate(creds["username"], creds["password"])
 
-        # Verify debug output was printed
-        mock_print.assert_called_with(
-            "Authentication failed. Status code: 500, response: Internal Server Error"
+        # Verify error was logged
+        mock_logger.error.assert_called_with(
+            "Authentication failed. Status code: %s, response: %s",
+            500,
+            "Internal Server Error",
         )
 
 

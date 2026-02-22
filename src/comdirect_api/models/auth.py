@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+from pydantic import field_validator
+
 from . import ComdirectBaseModel
 
 
@@ -18,6 +20,14 @@ class AuthResponse(ComdirectBaseModel):
     kdnr: str | None = None
     bpid: str | None = None
     kontakt_id: str | None = None
+
+    @field_validator("kdnr", "bpid", "kontakt_id", mode="before")
+    @classmethod
+    def convert_to_string(cls, v):
+        """Convert integer IDs to strings if needed."""
+        if v is not None and not isinstance(v, str):
+            return str(v)
+        return v
 
     # Computed field (not in the Comdirect API response)
     @property
@@ -48,4 +58,4 @@ class TokenState(ComdirectBaseModel):
         self.token_expires_at = auth.expires_at.timestamp()
         self.kdnr = auth.kdnr
         self.bpid = auth.bpid
-        self.kontaktid = auth.kontaktId
+        self.kontakt_id = auth.kontakt_id

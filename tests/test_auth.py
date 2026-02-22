@@ -11,14 +11,10 @@ Tests cover:
 - Token expiration checks
 """
 
-import json
 import time
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import httpx
 import pytest
-
-from comdirect_api.client import ComdirectClient
 
 
 @pytest.mark.asyncio

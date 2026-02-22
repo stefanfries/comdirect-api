@@ -11,10 +11,7 @@ import time
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import httpx
 import pytest
-
-from comdirect_api.client import ComdirectClient
 
 
 @pytest.mark.asyncio
@@ -115,7 +112,7 @@ async def test_get_account_balances_with_refresh(client_instance):
     with patch("httpx.AsyncClient") as mock_client_class:
         mock_client_class.return_value.__aenter__.return_value = mock_http_client
 
-        result = await client_instance.get_account_balances()
+        _ = await client_instance.get_account_balances()
 
         # Verify token was refreshed
         mock_http_client.post.assert_called_once()
@@ -196,7 +193,7 @@ async def test_get_account_transactions_with_filters(client_instance):
     with patch("httpx.AsyncClient") as mock_client_class:
         mock_client_class.return_value.__aenter__.return_value = mock_http_client
 
-        result = await client_instance.get_account_transactions(
+        _ = await client_instance.get_account_transactions(
             account_id="account_123",
             transaction_state="NOTBOOKED",
             transaction_direction="CREDIT",
