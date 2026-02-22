@@ -40,6 +40,8 @@ class ComdirectClient:
     BASE_URL = "https://api.comdirect.de/api"
     OAUTH_URL = "https://api.comdirect.de/oauth/token"
 
+    # ==================== INITIALIZATION ====================
+
     def __init__(
         self,
         client_id: str,
@@ -69,6 +71,8 @@ class ComdirectClient:
         self.challenge_id: str | None = None
         self.challenge_link: str | None = None
 
+    # ==================== PRIVATE HELPERS ====================
+
     def _request_headers(
         self, token: str, extra: dict[str, Any] | None = None
     ) -> dict[str, Any]:
@@ -88,6 +92,8 @@ class ComdirectClient:
         if extra:
             base_hdr.update(extra)
         return base_hdr
+
+    # ==================== AUTHENTICATION & SESSION ====================
 
     async def authenticate(
         self, username: str, password: str, scope: str = "SESSION_RW"
@@ -375,6 +381,8 @@ class ComdirectClient:
             f"({max_attempts * delay} seconds)"
         )
 
+    # ==================== BANKING/BROKERAGE ACCESS ====================
+
     async def get_banking_brokerage_access(self) -> dict[str, Any]:
         """
         Get an access token with BANKING/BROKERAGE permissions using the cd_secondary flow.
@@ -414,6 +422,8 @@ class ComdirectClient:
             self.kontaktid = data.get("kontaktId")  # Interne Identifikationsnummer
             return data
 
+    # ==================== TOKEN MANAGEMENT ====================
+
     async def refresh_access_token(self) -> dict[str, Any]:
         """Refresh the access token using the refresh token."""
         if not self.refresh_token:
@@ -449,6 +459,8 @@ class ComdirectClient:
     def is_token_expired(self) -> bool:
         """Check if the access token is expired."""
         return time.time() >= self.token_expires_at
+
+    # ==================== BANKING API ====================
 
     async def get_account_balances(self) -> AccountBalances:
         """Get the account balance."""
@@ -539,6 +551,8 @@ class ComdirectClient:
             response.raise_for_status()
             transactions = response.json()
             return AccountTransactions(**transactions)
+
+    # ==================== BROKERAGE API ====================
 
     async def get_depot_positions(
         self,
