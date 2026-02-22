@@ -4,6 +4,8 @@
 ![Python Version](https://img.shields.io/badge/python-3.11%2B-blue)
 ![Code Style](https://img.shields.io/badge/code%20style-ruff-black)
 ![Type Checked](https://img.shields.io/badge/type%20checked-pydantic-green)
+![Tests](https://img.shields.io/badge/tests-78%20passed-success)
+![Coverage](https://img.shields.io/badge/coverage-83%25-green)
 
 A modern, fully asynchronous Python client for the [Comdirect REST API](https://www.comdirect.de). Access your banking and brokerage accounts programmatically with full OAuth2 authentication and 2FA support.
 
@@ -13,10 +15,10 @@ A modern, fully asynchronous Python client for the [Comdirect REST API](https://
 
 - 🔐 **Full OAuth2 Flow** - Complete authentication with 2FA (push TAN support)
 - ⚡ **Fully Async** - Built on `httpx` for high-performance async operations
-- 📊 **Comprehensive API Coverage** - Banking, brokerage, depot positions, transactions, instruments
-- 🔒 **Type-Safe** - Pydantic V2 models for all API responses
-- 🐍 **Pythonic** - Snake_case interface with automatic camelCase conversion for API calls
-- 🧪 **Well Tested** - Comprehensive test suite with pytest
+- 📊 **Comprehensive API Coverage** - Banking, brokerage, depot positions, transactions, instruments, documents
+- 🔒 **Type-Safe** - Pydantic V2 models for all API responses with automatic camelCase conversion
+- 🐍 **Pythonic** - Clean snake_case interface with automatic camelCase for API calls
+- 🧪 **Well Tested** - 78 tests with 83% code coverage
 - 📦 **Modern Stack** - Python 3.11+, httpx, Pydantic V2, async/await
 
 ## 🚀 Tech Stack
@@ -130,33 +132,42 @@ The factory method ``ComdirectClient.create()`` handles the complete authenticat
 
 ## 📚 API Coverage
 
-### ✅ Implemented
+### ✅ Implemented (7 of 30 endpoints - 23%)
 
-#### Banking
+#### Banking (2/3)
 
-- ✅ Get account balances
-- ✅ Get account transactions (with filters)
+- ✅ `GET /accounts/balances` - Get all account balances
+- ✅ `GET /accounts/{accountId}/transactions` - Get account transactions with filters
 
-#### Brokerage
+#### Brokerage (5/20)
 
-- ✅ Get depots
-- ✅ Get depot positions (all or single)
-- ✅ Get depot transactions
-- ✅ Get instrument details (by WKN/ISIN)
+- ✅ `GET /depot` - Get all depots
+- ✅ `GET /depot/{depotId}/positions` - Get all depot positions
+- ✅ `GET /depot/{depotId}/positions/{positionId}` - Get single position details
+- ✅ `GET /depot/{depotId}/transactions` - Get depot transactions
+- ✅ `GET /instruments/{instrumentId}` - Get instrument details (WKN/ISIN)
+
+#### Messages (3/3)
+
+- ✅ `GET /messages/documents` - List documents (statements, confirmations)
+- ✅ `GET /messages/documents/{documentId}` - Download document
+- ✅ `GET /messages/predocuments/{documentId}` - Download predocument
 
 #### Authentication
 
-- ✅ OAuth2 authentication
-- ✅ Session management
-- ✅ 2FA (push TAN)
-- ✅ Token refresh
+- ✅ OAuth2 authentication with SESSION_RW scope
+- ✅ Session management and status checking
+- ✅ 2FA (push TAN validation)
+- ✅ Secondary banking token (cd_secondary grant)
+- ✅ Automatic token refresh
 
 ### 🚧 Planned
 
-- Documents API
-- Messages API
-- Reports API
-- Order placement (requires additional security measures)
+- **Orders API** - View existing orders (read-only)
+- **Reports API** - Comprehensive balance reports
+- **Banking** - Single account balance details
+
+> **Note**: Order placement (POST/PATCH/DELETE operations) is intentionally excluded. This client focuses on read-only operations for account monitoring and analysis.
 
 ## 🛠️ Development
 
@@ -169,37 +180,76 @@ cd comdirect-api
 uv sync
 
 # Run tests
-uv run pytest tests/ -v
+uv run pytest tests/ -v              # Verbose output
+uv run pytest tests/ -q              # Quick summary
+
+# Run tests with coverage
+uv run pytest --cov=src/comdirect_api tests/
 
 # Run linter
-uv run ruff check .
-
-# Auto-fix linting issues
-uv run ruff check . --fix
+uv run ruff check .                  # Check for issues
+uv run ruff check . --fix            # Auto-fix issues
 ```
+
+### Quality Standards
+
+- **Tests**: 78 passing tests
+- **Coverage**: 83% code coverage
+- **Linting**: Zero errors, zero warnings
+- **Type Safety**: Full Pydantic V2 validation
+
+See [ARCHITECTURE.md](docs/ARCHITECTURE.md#development-guidelines) for complete development guidelines.
 
 ### Project Structure
 
 ```text
 comdirect_api/
 ├── src/comdirect_api/
-│   ├── client.py          # Main client class
-│   ├── settings.py        # Configuration management
-│   ├── utils.py           # Utility functions
-│   ├── models/            # Pydantic models
-│   │   ├── accounts.py
-│   │   ├── depots.py
-│   │   ├── transactions.py
-│   │   └── instruments.py
-│   └── main.py            # Example script
-├── tests/                 # Test suite
-├── docs/                  # API documentation
-└── pyproject.toml         # Project metadata
+│   ├── client.py          # Main client class (978 lines)
+│   ├── main.py            # Example usage script
+│   ├── utils.py           # Utility functions (timestamp)
+│   ├── core/
+│   │   └── settings.py    # Environment configuration
+│   ├── clients/           # Future modular clients
+│   │   ├── auth.py        # (planned)
+│   │   ├── banking.py     # (planned)
+│   │   ├── brokerage.py   # (planned)
+│   │   └── session.py     # (planned)
+│   └── models/            # Pydantic V2 models
+│       ├── base.py        # ComdirectBaseModel + utilities
+│       ├── accounts.py    # Account & balance models
+│       ├── depots.py      # Depot & position models
+│       ├── transactions.py # Transaction models
+│       ├── instruments.py # Instrument data models
+│       ├── messages.py    # Documents & messages models
+│       └── auth.py        # Authentication models
+├── tests/                 # Test suite (78 tests, 83% coverage)
+│   ├── test_auth.py
+│   ├── test_banking.py
+│   ├── test_brokerage.py
+│   ├── test_messages.py
+│   └── ...
+├── docs/
+│   ├── swagger.json       # Comdirect API specification
+│   └── ARCHITECTURE.md    # Architecture & development guidelines ⭐
+├── README.md              # This file
+└── pyproject.toml         # Project configuration
 ```
 
 ## 📖 Documentation
 
-For detailed API documentation, see the [Comdirect REST API documentation](https://www.comdirect.de) and the inline docstrings in the code.
+- **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** - Comprehensive architecture documentation and development guidelines ⭐
+- **[Comdirect REST API](https://www.comdirect.de)** - Official API documentation
+- **[API Specification](docs/swagger.json)** - OpenAPI/Swagger spec
+- **Inline Docstrings** - Detailed docstrings in source code
+
+### Quick Links
+
+- **Architecture Overview**: See [ARCHITECTURE.md](docs/ARCHITECTURE.md#project-architecture)
+- **Authentication Flow**: See [ARCHITECTURE.md](docs/ARCHITECTURE.md#authentication-architecture)
+- **Data Models**: See [ARCHITECTURE.md](docs/ARCHITECTURE.md#data-models-architecture)
+- **Development Guidelines**: See [ARCHITECTURE.md](docs/ARCHITECTURE.md#development-guidelines)
+- **Adding New Endpoints**: See [ARCHITECTURE.md](docs/ARCHITECTURE.md#implementation-pattern-for-new-endpoints)
 
 ## ⚠️ Disclaimer
 
