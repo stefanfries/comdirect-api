@@ -46,9 +46,18 @@ class ComdirectClient:
         self,
         client_id: str,
         client_secret: str,
+        zugangsnummer: str,
+        pin: str,
     ):
+        """Initialize ComdirectClient with credentials.
+        
+        Note: This only stores credentials. Use `await ComdirectClient.create()` 
+        to get a fully authenticated client ready for API calls.
+        """
         self.client_id = client_id
         self.client_secret = client_secret
+        self.zugangsnummer = zugangsnummer
+        self.pin = pin
         # OAuth token for session management (scope: TWO_FACTOR)
         self.primary_access_token: str | None = None
         # OAuth token for banking/brokerage (scope: BANKING_RO BROKERAGE_RW SESSION_RW)
@@ -70,6 +79,79 @@ class ComdirectClient:
         # TAN challenge info, only valid between TAN initiation and activation
         self.challenge_id: str | None = None
         self.challenge_link: str | None = None
+
+    @classmethod
+    async def create(
+        cls,
+        client_id: str | None = None,
+        client_secret: str | None = None,
+        zugangsnummer: str | None = None,
+        pin: str | None = None,
+    ) -> "ComdirectClient":
+        """Create and authenticate a ComdirectClient instance.
+        
+        This factory method handles the complete authentication flow:
+        1. Primary OAuth authentication
+        2. Session status check
+        3. TAN challenge (waits for push notification approval)
+        4. Banking/brokerage access token retrieval
+        
+        Args:
+            client_id: OAuth client ID (defaults to settings.client_id)
+            client_secret: OAuth client secret (defaults to settings.client_secret)
+            zugangsnummer: Account login number (defaults to settings.zugangsnummer)
+            pin: Account PIN (defaults to settings.pin)
+            
+        Returns:
+            Fully authenticated ComdirectClient ready for API calls.
+            
+        Example:
+            >>> client = await ComdirectClient.create()
+            >>> balances = await client.get_account_balances()
+        """
+        from .settings import settings
+
+        # Use provided credentials or fall back to settings
+        _client_id = client_id or settings.client_id.get_secret_value()
+        _client_secret = client_secret or settings.client_secret.get_secret_value()
+        _zugangsnummer = zugangsnummer or settings.zugangsnummer.get_secret_value()
+        _pin = pin or settings.pin.get_secret_value()
+
+        # Create instance
+        instance = cls(
+            client_id=_client_id,
+            client_secret=_client_secret,
+            zugangsnummer=_zugangsnummer,
+            pin=_pin,
+        )
+
+        # Run complete authentication flow
+        await instance._initialize()
+
+        return instance
+
+    async def _initialize(self) -> None:
+        """Execute complete authentication flow.
+        
+        Private method that orchestrates:
+        1. Primary OAuth authentication
+        2. Session status retrieval
+        3. TAN challenge and validation
+        4. Banking/brokerage access token
+        """
+        print("Authenticating with Comdirect API...")
+        await self._authenticate(self.zugangsnummer, self.pin)
+        
+        print("Retrieving session status...")
+        await self._get_session_status()
+        
+        print("Initiating TAN challenge...")
+        await self._create_validate_session_tan()
+        
+        print("Obtaining banking/brokerage access...")
+        await self._get_banking_brokerage_access()
+        
+        print("Authentication complete! Client ready for API calls.\n")
 
     # ==================== PRIVATE HELPERS ====================
 
@@ -95,13 +177,15 @@ class ComdirectClient:
 
     # ==================== AUTHENTICATION & SESSION ====================
 
-    async def authenticate(
+    async def _authenticate(
         self, username: str, password: str, scope: str = "SESSION_RW"
     ) -> dict[str, Any]:
         """
         Authenticate with Comdirect OAuth2 and retrieve primary access/refresh tokens.
         Returns a dict containing primary tokens and expiration info.
         See chapter 2.1 of comdirect REST API documentation for details.
+        
+        Private method - use `await ComdirectClient.create()` for normal usage.
         """
         headers = {
             "Accept": "application/json",
@@ -139,10 +223,12 @@ class ComdirectClient:
             self.kontaktid = data.get("kontaktId")  # Interne Identifikationsnummer
             return data
 
-    async def get_session_status(self) -> dict[str, Any]:
+    async def _get_session_status(self) -> dict[str, Any]:
         """
         Retrieve session status
         See chapter 2.2 of comdirect REST API documentation for details.
+        
+        Private method - use `await ComdirectClient.create()` for normal usage.
         """
         url = f"{self.BASE_URL}/session/clients/user/v1/sessions"
 
@@ -165,7 +251,7 @@ class ComdirectClient:
             self.activated_2fa = data[0].get("activated2FA", False)
             return data
 
-    async def create_validate_session_tan(self) -> dict[str, Any]:
+    async def _create_validate_session_tan(self) -> dict[str, Any]:
         """
         Orchestrates the TAN activation workflow:
         1. Initiates the TAN challenge.
@@ -173,6 +259,8 @@ class ComdirectClient:
         3. Activates the session TAN.
         Returns the activation response as a dict.
         See chapter 2.3 of comdirect REST API documentation for details.
+        
+        Private method - use `await ComdirectClient.create()` for normal usage.
         """
         # Check prerequisites
         if not self.session_id:
@@ -383,7 +471,7 @@ class ComdirectClient:
 
     # ==================== BANKING/BROKERAGE ACCESS ====================
 
-    async def get_banking_brokerage_access(self) -> dict[str, Any]:
+    async def _get_banking_brokerage_access(self) -> dict[str, Any]:
         """
         Get an access token with BANKING/BROKERAGE permissions using the cd_secondary flow.
         See chapter 2.5 of comdirect REST API documentation for details.

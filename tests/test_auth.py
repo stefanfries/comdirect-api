@@ -45,7 +45,7 @@ async def test_get_session_status_success(client_instance):
     with patch("httpx.AsyncClient") as mock_client_class:
         mock_client_class.return_value.__aenter__.return_value = mock_http_client
 
-        result = await client_instance.get_session_status()
+        result = await client_instance._get_session_status()
 
         assert result == mock_response_data
         assert client_instance.session_id == "test_session_id"
@@ -59,7 +59,7 @@ async def test_get_session_status_no_token(client_instance):
     client_instance.primary_access_token = None
 
     with pytest.raises(ValueError, match="No access token available"):
-        await client_instance.get_session_status()
+        await client_instance._get_session_status()
 
 
 @pytest.mark.asyncio
@@ -88,7 +88,7 @@ async def test_get_banking_brokerage_access_success(client_instance):
     with patch("httpx.AsyncClient") as mock_client_class:
         mock_client_class.return_value.__aenter__.return_value = mock_http_client
 
-        result = await client_instance.get_banking_brokerage_access()
+        result = await client_instance._get_banking_brokerage_access()
 
         assert result == mock_response_data
         assert client_instance.banking_access_token == "banking_token"
@@ -102,7 +102,7 @@ async def test_get_banking_brokerage_access_no_primary_token(client_instance):
     client_instance.primary_access_token = None
 
     with pytest.raises(ValueError, match="No base access token available"):
-        await client_instance.get_banking_brokerage_access()
+        await client_instance._get_banking_brokerage_access()
 
 
 @pytest.mark.asyncio

@@ -51,7 +51,7 @@ async def test_authenticate_success(client_instance, creds):
         mock_client_class.return_value.__aenter__.return_value = mock_http_client
 
         # Call the authenticate method
-        result = await client_instance.authenticate(
+        result = await client_instance._authenticate(
             creds["username"], creds["password"]
         )
 
@@ -100,7 +100,7 @@ async def test_authenticate_http_error(client_instance, creds):
 
         # Call authenticate and expect it to raise an exception
         with pytest.raises(httpx.HTTPStatusError):
-            await client_instance.authenticate(creds["username"], creds["password"])
+            await client_instance._authenticate(creds["username"], creds["password"])
 
         # Verify tokens are not set on error
         assert client_instance.primary_access_token is None
@@ -130,7 +130,7 @@ async def test_authenticate_invalid_credentials(client_instance, creds):
 
         # Call authenticate and expect it to raise an exception
         with pytest.raises(httpx.HTTPStatusError):
-            await client_instance.authenticate(creds["username"], creds["password"])
+            await client_instance._authenticate(creds["username"], creds["password"])
 
 
 @pytest.mark.asyncio
@@ -145,7 +145,7 @@ async def test_authenticate_network_error(client_instance, creds):
 
         # Call authenticate and expect it to raise a ConnectError
         with pytest.raises(httpx.ConnectError):
-            await client_instance.authenticate(creds["username"], creds["password"])
+            await client_instance._authenticate(creds["username"], creds["password"])
 
 
 @pytest.mark.asyncio
@@ -171,7 +171,7 @@ async def test_authenticate_missing_tokens_in_response(client_instance, creds):
         mock_client_class.return_value.__aenter__.return_value = mock_http_client
 
         # Call authenticate and check that tokens are not set due to missing fields
-        await client_instance.authenticate(creds["username"], creds["password"])
+        await client_instance._authenticate(creds["username"], creds["password"])
         assert client_instance.primary_access_token is None
         assert client_instance.refresh_token is None
 
@@ -194,7 +194,7 @@ async def test_authenticate_malformed_json_response(client_instance, creds):
 
         # Call authenticate and expect it to raise a JSONDecodeError
         with pytest.raises(json.JSONDecodeError):
-            await client_instance.authenticate(creds["username"], creds["password"])
+            await client_instance._authenticate(creds["username"], creds["password"])
 
 
 @pytest.mark.asyncio
@@ -222,7 +222,7 @@ async def test_authenticate_token_expiration_calculation(client_instance, creds)
         # Record time before call
         before_time = time.time()
 
-        await client_instance.authenticate(creds["username"], creds["password"])
+        await client_instance._authenticate(creds["username"], creds["password"])
 
         # Record time after call
         after_time = time.time()
@@ -256,7 +256,7 @@ async def test_authenticate_debug_output_on_error(client_instance, creds):
 
         # Call authenticate and expect it to raise an exception
         with pytest.raises(httpx.HTTPStatusError):
-            await client_instance.authenticate(creds["username"], creds["password"])
+            await client_instance._authenticate(creds["username"], creds["password"])
 
         # Verify debug output was printed
         mock_print.assert_called_with(
@@ -266,10 +266,12 @@ async def test_authenticate_debug_output_on_error(client_instance, creds):
 
 def test_client_initialization():
     """Test that client is initialized with correct values."""
-    test_client = ComdirectClient("test_id", "test_secret")
+    test_client = ComdirectClient("test_id", "test_secret", "test_user", "test_pin")
 
     assert test_client.client_id == "test_id"
     assert test_client.client_secret == "test_secret"
+    assert test_client.zugangsnummer == "test_user"
+    assert test_client.pin == "test_pin"
     assert test_client.primary_access_token is None
     assert test_client.refresh_token is None
     assert test_client.token_expires_at == 0
@@ -294,7 +296,7 @@ async def test_authenticate_with_empty_credentials(client_instance):
         mock_client_class.return_value.__aenter__.return_value = mock_http_client
 
         with pytest.raises(httpx.HTTPStatusError):
-            await client_instance.authenticate("", "")
+            await client_instance._authenticate("", "")
 
         # Verify the call was made with empty credentials
         mock_http_client.post.assert_called_once()

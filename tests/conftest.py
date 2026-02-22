@@ -29,4 +29,6 @@ def client_instance(creds):
     return ComdirectClient(
         client_id=creds["client_id"],
         client_secret=creds["client_secret"],
+        zugangsnummer=creds["username"],
+        pin=creds["password"],
     )

@@ -22,7 +22,7 @@ A modern, fully asynchronous Python client for the [Comdirect REST API](https://
 ## 🚀 Tech Stack
 
 | Component | Technology |
-|-----------|-----------|
+| --------- | --------- |
 | HTTP Client | `httpx` (async) |
 | Data Validation | `pydantic` V2 |
 | Configuration | `pydantic-settings` |
@@ -59,34 +59,22 @@ PIN=your_pin
 
 ## 💻 Usage
 
-### Basic Example
+### Simple Example (Recommended)
 
 ```python
 import asyncio
 from comdirect_api.client import ComdirectClient
-from comdirect_api.settings import settings
 
 async def main():
-    # Initialize client
-    client = ComdirectClient(
-        client_id=settings.client_id.get_secret_value(),
-        client_secret=settings.client_secret.get_secret_value()
-    )
+    # One-line authentication! Factory method handles everything:
+    # 1. OAuth authentication
+    # 2. Session setup
+    # 3. TAN challenge (approve on your phone)
+    # 4. Banking/brokerage token
     
-    # Authenticate
-    await client.authenticate(
-        username=settings.zugangsnummer.get_secret_value(),
-        password=settings.pin.get_secret_value()
-    )
+    client = await ComdirectClient.create()
     
-    # Get session and activate 2FA
-    await client.get_session_status()
-    await client.create_validate_session_tan()  # Approve on your phone
-    
-    # Get banking access token
-    await client.get_banking_brokerage_access()
-    
-    # Fetch account balances
+    # Ready to use!
     balances = await client.get_account_balances()
     for balance in balances.values:
         print(f"Account: {balance.account_display_id}")
@@ -97,8 +85,31 @@ async def main():
     for depot in depots.values:
         positions = await client.get_depot_positions(depot.depot_id)
         for position in positions.values:
-            print(f"Position: {position.position_id}")
-            print(f"Quantity: {position.quantity}")
+            print(f"{position.wkn}: {position.current_value}")
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```
+
+### Advanced Example (Custom Credentials)
+
+```python
+import asyncio
+from comdirect_api.client import ComdirectClient
+
+async def main():
+    # Provide custom credentials (or uses .env by default)
+    client = await ComdirectClient.create(
+        client_id="your_client_id",
+        client_secret="your_client_secret",
+        zugangsnummer="your_account_number",
+        pin="your_pin"
+    )
+    
+    # Client is already authenticated and ready!
+    balances = await client.get_account_balances()
+    for balance in balances.values:
+        print(f"{balance.account_id}: {balance.balance.value}")
 
 if __name__ == "__main__":
     asyncio.run(main())
@@ -106,29 +117,35 @@ if __name__ == "__main__":
 
 ### Authentication Flow
 
-The Comdirect API requires a multi-step authentication process:
+The factory method ``ComdirectClient.create()`` handles the complete authentication automatically:
 
-1. **Primary OAuth** - Get base token with `SESSION_RW` scope
+1. **Primary OAuth** - Authenticate with ``SESSION_RW`` scope
 2. **Session Status** - Establish session ID
-3. **TAN Challenge** - Initiate and confirm 2FA (push TAN)
-4. **Secondary Token** - Get banking/brokerage access via `cd_secondary` grant
-5. **API Calls** - Use banking token for operations
+3. **TAN Challenge** - Initiate and wait for 2FA approval (push TAN)
+4. **Banking Token** - Get banking/brokerage access via ``cd_secondary`` grant
+
+**Result**: A fully authenticated client ready for API calls in one line!
+
+> **Note**: You'll need to approve the push TAN notification on your phone during initialization.
 
 ## 📚 API Coverage
 
 ### ✅ Implemented
 
 #### Banking
+
 - ✅ Get account balances
 - ✅ Get account transactions (with filters)
 
 #### Brokerage
+
 - ✅ Get depots
 - ✅ Get depot positions (all or single)
 - ✅ Get depot transactions
 - ✅ Get instrument details (by WKN/ISIN)
 
 #### Authentication
+
 - ✅ OAuth2 authentication
 - ✅ Session management
 - ✅ 2FA (push TAN)
@@ -163,7 +180,7 @@ uv run ruff check . --fix
 
 ### Project Structure
 
-```
+```text
 comdirect_api/
 ├── src/comdirect_api/
 │   ├── client.py          # Main client class
