@@ -230,6 +230,7 @@ class ComdirectClient:
         payload = {
             "identifier": self.session_id,
             "sessionTanActive": True,
+            "activated2FA": True,
         }
         async with httpx.AsyncClient(follow_redirects=False) as client:
             response = await client.patch(url, headers=headers, json=payload)

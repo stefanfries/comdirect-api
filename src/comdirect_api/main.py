@@ -64,7 +64,7 @@ async def main():
         account_depots = await client.get_account_depots()
         account_depots_json = account_depots.model_dump_json(indent=4)
         print("Depots:\n", account_depots_json)
-        
+
         for depot in account_depots.values:
             print("Depotinformationen\n", depot)
             depot_id = depot.depot_id
@@ -76,7 +76,7 @@ async def main():
             print(f"Depot Display ID: {depot_display_id}")
             print(f"Depot Type: {depot_type}")
             print(f"Target Market: {target_market}")
-            
+
     except Exception as e:
         print("Fehler beim Abrufen der Depots:", e)
 
