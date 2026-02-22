@@ -45,11 +45,10 @@ class ComdirectClient:
     ):
         self.client_id = client_id
         self.client_secret = client_secret
-        self.primary_access_token: str | None = None  # first OAUTH token (base token)
-        self.session_access_token: str | None = None  # token after TAN activation
-        self.banking_access_token: str | None = (
-            None  # token after cd_secondary for banking/brokerage
-        )
+        # OAuth token for session management (scope: TWO_FACTOR)
+        self.primary_access_token: str | None = None
+        # OAuth token for banking/brokerage (scope: BANKING_RO BROKERAGE_RW SESSION_RW)
+        self.banking_access_token: str | None = None
         self.refresh_token: str | None = None
         self.session_id: str | None = (
             None  # session_id will be set after authentication
@@ -243,7 +242,6 @@ class ComdirectClient:
             response.raise_for_status()
             data = response.json()
             print(f"Session TAN activation response: {data}")
-            self.session_access_token = data.get("access_token")
             return data
 
     async def _initiate_tan_challenge(self) -> dict[str, Any]:
