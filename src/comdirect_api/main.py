@@ -148,7 +148,6 @@ async def main():
         print(f"Number of documents: {len(documents.values)}")
 
         for doc in documents.values[:5]:  # Show first 5
-            doc_id = doc.document_id
             name = doc.name
             date = doc.date_creation
             mime = doc.mime_type

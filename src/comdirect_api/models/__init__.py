@@ -4,8 +4,6 @@ import re
 
 from pydantic import BaseModel, ConfigDict
 
-from .messages import Document, DocumentMetadata, Documents
-
 
 def to_camel(s: str) -> str:
     """
@@ -30,3 +28,15 @@ class ComdirectBaseModel(BaseModel):
         alias_generator=to_camel,
         populate_by_name=True,
     )
+
+
+# Import models after base class definition to avoid circular imports
+from .messages import Document, DocumentMetadata, Documents  # noqa: E402
+
+__all__ = [
+    "ComdirectBaseModel",
+    "to_camel",
+    "Document",
+    "DocumentMetadata",
+    "Documents",
+]

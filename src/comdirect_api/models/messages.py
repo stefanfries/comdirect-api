@@ -1,9 +1,11 @@
 """Messages models for Comdirect API."""
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import Field
+
+from . import ComdirectBaseModel
 
 
-class DocumentMetadata(BaseModel):
+class DocumentMetadata(ComdirectBaseModel):
     """Category-specific metadata of documents."""
 
     archived: bool = Field(
@@ -11,27 +13,22 @@ class DocumentMetadata(BaseModel):
     )
     date_read: str | None = Field(
         default=None,
-        alias="dateRead",
         description="Date on which the document was read (YYYY-MM-DD)",
     )
     already_read: bool = Field(
-        default=False, alias="alreadyRead", description="Has the document been read?"
+        default=False, description="Has the document been read?"
     )
     predocument_exists: bool = Field(
         default=False,
-        alias="predocumentExists",
         description="Does a predocument exist?",
     )
 
-    model_config = ConfigDict(populate_by_name=True)
 
-
-class Document(BaseModel):
+class Document(ComdirectBaseModel):
     """Model for a document."""
 
     document_id: str = Field(
         ...,
-        alias="documentId",
         description="Unique ID of the document (UUID)",
         max_length=32,
     )
@@ -42,12 +39,10 @@ class Document(BaseModel):
     )
     date_creation: str = Field(
         ...,
-        alias="dateCreation",
         description="Date at which the Document was assigned to the client (YYYY-MM-DD)",
     )
     mime_type: str = Field(
         ...,
-        alias="mimeType",
         description="The native mimeType of the document (e.g., application/pdf)",
     )
     deletable: bool = Field(
@@ -60,14 +55,11 @@ class Document(BaseModel):
     )
     document_meta_data: DocumentMetadata | None = Field(
         default=None,
-        alias="documentMetaData",
         description="Optional information about the document",
     )
 
-    model_config = ConfigDict(populate_by_name=True)
 
-
-class Documents(BaseModel):
+class Documents(ComdirectBaseModel):
     """List of documents with pagination."""
 
     values: list[Document] = Field(
@@ -79,5 +71,3 @@ class Documents(BaseModel):
     aggregated: dict | None = Field(
         default=None, description="Aggregated information"
     )
-
-    model_config = ConfigDict(populate_by_name=True)
