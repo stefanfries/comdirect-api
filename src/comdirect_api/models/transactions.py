@@ -2,7 +2,7 @@
 
 from datetime import date, datetime
 
-from . import ComdirectBaseModel
+from .base import ComdirectBaseModel
 
 
 class AccountInformation(ComdirectBaseModel):

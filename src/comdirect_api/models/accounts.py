@@ -19,7 +19,7 @@ from decimal import Decimal
 from pydantic import Field
 from pydantic_extra_types.currency_code import ISO4217
 
-from . import ComdirectBaseModel
+from .base import ComdirectBaseModel
 
 
 class Paging(ComdirectBaseModel):

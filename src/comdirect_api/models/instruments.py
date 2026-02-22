@@ -5,7 +5,7 @@ from decimal import Decimal
 
 from pydantic import Field
 
-from . import ComdirectBaseModel
+from .base import ComdirectBaseModel
 
 
 class Price(ComdirectBaseModel):

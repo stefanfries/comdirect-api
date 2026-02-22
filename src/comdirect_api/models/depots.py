@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from . import ComdirectBaseModel
+from .base import ComdirectBaseModel
 from .instruments import Instrument
 
 

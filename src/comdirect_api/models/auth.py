@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 
 from pydantic import field_validator
 
-from . import ComdirectBaseModel
+from .base import ComdirectBaseModel
 
 
 class AuthResponse(ComdirectBaseModel):
