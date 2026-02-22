@@ -18,33 +18,33 @@ logging.basicConfig(
 
 def format_remittance_info(remittance_info: str | None) -> str:
     """Format remittance info by parsing line number markers (01, 02, 03, etc.).
-    
+
     Banking systems use multi-line remittance info with prefixes like:
     '01Purpose line 1            02Purpose line 2'
-    
+
     This function splits them into a cleaner format.
-    
+
     Args:
         remittance_info: Raw remittance information string
-        
+
     Returns:
         Formatted string with lines separated by ' | '
     """
     if not remittance_info:
         return "N/A"
-    
+
     # Remove line number prefixes and split into parts
     # Pattern: 2 digits followed by non-digit content until next 2-digit prefix
     # This handles: "01Text here    02More text    03Even more"
     parts = re.split(r'\d{2}', remittance_info)
-    
+
     # Filter out empty strings and clean whitespace
     cleaned_parts = [part.strip() for part in parts if part.strip()]
-    
+
     # Limit to first 3 meaningful parts
     if cleaned_parts:
         return " | ".join(cleaned_parts[:3])
-    
+
     # Fallback: just return cleaned string
     return remittance_info.strip()[:100]
 
