@@ -204,36 +204,40 @@ See [ARCHITECTURE.md](docs/ARCHITECTURE.md#development-guidelines) for complete 
 
 ```text
 comdirect_api/
-├── src/comdirect_api/
-│   ├── client.py          # Main client class (978 lines)
-│   ├── main.py            # Example usage script
-│   ├── utils.py           # Utility functions (timestamp)
-│   ├── core/
-│   │   └── settings.py    # Environment configuration
-│   ├── clients/           # Future modular clients
-│   │   ├── auth.py        # (planned)
-│   │   ├── banking.py     # (planned)
-│   │   ├── brokerage.py   # (planned)
-│   │   └── session.py     # (planned)
-│   └── models/            # Pydantic V2 models
-│       ├── base.py        # ComdirectBaseModel + utilities
-│       ├── accounts.py    # Account & balance models
-│       ├── depots.py      # Depot & position models
-│       ├── transactions.py # Transaction models
-│       ├── instruments.py # Instrument data models
-│       ├── messages.py    # Documents & messages models
-│       └── auth.py        # Authentication models
-├── tests/                 # Test suite (78 tests, 83% coverage)
-│   ├── test_auth.py
-│   ├── test_banking.py
-│   ├── test_brokerage.py
-│   ├── test_messages.py
+├── src/
+│   └── comdirect_api/          # Main package
+│       ├── __init__.py         # Package initialization
+│       ├── client.py           # Main API client class (978 lines)
+│       ├── main.py             # Example usage script
+│       ├── settings.py         # Environment configuration
+│       ├── utils.py            # Utility functions (timestamp)
+│       └── models/             # Pydantic V2 data models
+│           ├── __init__.py     # Public API exports (8 models)
+│           ├── base.py         # ComdirectBaseModel + utilities
+│           ├── accounts.py     # Account & balance models
+│           ├── auth.py         # Authentication models (internal)
+│           ├── depots.py       # Depot & position models
+│           ├── instruments.py  # Instrument data models
+│           ├── messages.py     # Documents & messages models
+│           └── transactions.py # Transaction models
+├── tests/                      # Test suite (78 tests, 83% coverage)
+│   ├── conftest.py             # Shared test fixtures
+│   ├── test_auth.py            # Authentication tests
+│   ├── test_banking.py         # Banking operations tests
+│   ├── test_brokerage.py       # Brokerage operations tests
+│   ├── test_messages.py        # Messages API tests
 │   └── ...
-├── docs/
-│   ├── swagger.json       # Comdirect API specification
-│   └── ARCHITECTURE.md    # Architecture & development guidelines ⭐
-├── README.md              # This file
-└── pyproject.toml         # Project configuration
+├── docs/                       # Documentation
+│   ├── ARCHITECTURE.md         # Architecture & development guidelines ⭐
+│   ├── swagger.json            # Comdirect API specification
+│   ├── comdirect_REST_API_Dokumentation.md
+│   └── comdirect_REST_API_Dokumentation.pdf
+├── examples/                   # Example scripts
+│   └── logging_config.py       # Logging configuration example
+├── LICENSE                     # MIT License
+├── README.md                   # This file
+├── pyproject.toml              # Project configuration & dependencies
+└── uv.lock                     # Locked dependency versions
 ```
 
 ## 📖 Documentation

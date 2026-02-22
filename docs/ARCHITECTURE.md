@@ -8,30 +8,49 @@ This document describes the architecture, design patterns, and development guide
 
 ### High-Level Structure
 
-```
+```text
 comdirect_api/
-├── src/comdirect_api/          # Main package
-│   ├── client.py               # Main API client class
-│   ├── main.py                 # Example usage script
-│   ├── utils.py                # Utility functions
-│   ├── core/                   # Core configuration
-│   │   └── settings.py         # Environment and settings management
-│   ├── clients/                # Modular client components (future)
-│   │   ├── auth.py             # Authentication client
-│   │   ├── banking.py          # Banking operations
-│   │   ├── brokerage.py        # Brokerage operations
-│   │   └── session.py          # Session management
-│   └── models/                 # Pydantic data models
-│       ├── base.py             # Base model and utilities
-│       ├── accounts.py         # Account models
-│       ├── auth.py             # Authentication models
-│       ├── depots.py           # Depot/position models
-│       ├── instruments.py      # Instrument data models
-│       ├── messages.py         # Messages/documents models
-│       └── transactions.py     # Transaction models
-├── tests/                      # Test suite
-├── docs/                       # API documentation
-└── pyproject.toml              # Project configuration
+├── src/
+│   └── comdirect_api/          # Main package
+│       ├── __init__.py         # Package initialization
+│       ├── client.py           # Main API client class (978 lines)
+│       ├── main.py             # Example usage script
+│       ├── settings.py         # Environment configuration
+│       ├── utils.py            # Utility functions (timestamp)
+│       └── models/             # Pydantic V2 data models
+│           ├── __init__.py     # Public API exports
+│           ├── base.py         # ComdirectBaseModel + utilities
+│           ├── accounts.py     # Account & balance models
+│           ├── auth.py         # Authentication models (internal)
+│           ├── depots.py       # Depot & position models
+│           ├── instruments.py  # Instrument data models
+│           ├── messages.py     # Documents & messages models
+│           └── transactions.py # Transaction models
+├── tests/                      # Test suite (78 tests, 83% coverage)
+│   ├── __init__.py
+│   ├── conftest.py             # Shared test fixtures
+│   ├── test_auth.py            # Authentication tests
+│   ├── test_banking.py         # Banking operations tests
+│   ├── test_brokerage.py       # Brokerage operations tests
+│   ├── test_client.py          # Client functionality tests
+│   ├── test_factory.py         # Factory pattern tests
+│   ├── test_messages.py        # Messages API tests
+│   ├── test_reports.py         # Reports tests (placeholder)
+│   ├── test_tan_flow.py        # TAN workflow tests
+│   ├── test_tan_polling.py     # TAN polling tests
+│   ├── test_utils.py           # Utility function tests
+│   └── test_validation_errors.py # Validation tests
+├── docs/                       # Documentation
+│   ├── ARCHITECTURE.md         # This file
+│   ├── swagger.json            # Comdirect API specification
+│   ├── comdirect_REST_API_Dokumentation.md
+│   └── comdirect_REST_API_Dokumentation.pdf
+├── examples/                   # Example scripts
+│   └── logging_config.py       # Logging configuration example
+├── LICENSE                     # MIT License
+├── README.md                   # Project documentation
+├── pyproject.toml              # Project configuration & dependencies
+└── uv.lock                     # Locked dependency versions
 ```
 
 ### Design Philosophy
@@ -48,7 +67,7 @@ comdirect_api/
 
 The Comdirect API requires a complex 5-step authentication sequence that **must** be followed in order:
 
-```
+```text
 1. Primary OAuth         → primary_access_token (SESSION_RW scope)
 2. Session Status        → session_id + 2FA state check
 3. TAN Challenge         → Push TAN approval (2FA)
@@ -61,7 +80,7 @@ The Comdirect API requires a complex 5-step authentication sequence that **must*
 The `ComdirectClient` class maintains multiple token types:
 
 | Token Type | Purpose | Scope | Usage |
-|------------|---------|-------|-------|
+| ---------- | ------- | ----- | ----- |
 | `primary_access_token` | Initial authentication | `SESSION_RW` | Session setup |
 | `session_access_token` | Post-TAN validation | Session operations | TAN activation |
 | `banking_access_token` | Banking/brokerage access | Account operations | All API calls |
@@ -99,6 +118,7 @@ class ComdirectBaseModel(BaseModel):
 ```
 
 **Key Features**:
+
 - **Automatic camelCase Conversion**: Python uses `snake_case`, API expects `camelCase`
 - **Bi-directional Mapping**: Accepts both snake_case and camelCase in responses
 - **Type Safety**: Full Pydantic validation and type checking
@@ -108,7 +128,7 @@ class ComdirectBaseModel(BaseModel):
 Models are organized by domain in separate files:
 
 | File | Purpose | Key Models |
-|------|---------|------------|
+| ---- | ------- | ---------- |
 | `base.py` | Base class and utilities | `ComdirectBaseModel`, `to_camel()` |
 | `accounts.py` | Account and balance data | `AccountBalances`, `AccountBalance`, `Balance` |
 | `auth.py` | Authentication responses | `AuthResponse`, `TokenState` (internal) |
@@ -137,6 +157,7 @@ __all__ = [
 **Design Principle**: Internal models (e.g., `Account`, `Balance`, `AuthResponse`) are not exposed. Users access nested data via properties of response objects.
 
 Example:
+
 ```python
 balances = await client.get_account_balances()
 # Access nested models via properties
@@ -173,6 +194,7 @@ All API requests use a consistent header structure via `_request_headers()`:
 ### Request ID Generation
 
 Each request gets a unique ID using `timestamp()` from `utils.py`:
+
 ```python
 def timestamp() -> str:
     """Generate timestamp string for request IDs."""
@@ -195,7 +217,7 @@ This ensures seamless operation without manual token management.
 ### Code Style
 
 | Aspect | Standard | Tool |
-|--------|----------|------|
+| ------ | -------- | ---- |
 | Code Formatting | PEP 8 | `ruff` |
 | Import Sorting | isort-compatible | `ruff` |
 | Type Hints | Mandatory for public methods | `pydantic` |
@@ -276,13 +298,14 @@ except httpx.HTTPStatusError as e:
 
 Follow Conventional Commits format:
 
-```
+```text
 <type>(<scope>): <description>
 
 [optional body]
 ```
 
 **Types**:
+
 - `feat`: New feature
 - `fix`: Bug fix
 - `refactor`: Code restructuring
@@ -291,7 +314,8 @@ Follow Conventional Commits format:
 - `chore`: Maintenance tasks
 
 **Examples**:
-```
+
+```text
 feat(messages): implement Messages API endpoints
 fix(auth): correct token refresh timing
 refactor(models): extract ComdirectBaseModel to base.py
@@ -314,7 +338,7 @@ PIN=your_pin
 
 #### Settings Management
 
-Settings are managed via Pydantic Settings in `core/settings.py`:
+Settings are managed via Pydantic Settings in `settings.py`:
 
 ```python
 class Settings(BaseSettings):
@@ -335,19 +359,23 @@ class Settings(BaseSettings):
 #### Implemented Endpoints
 
 **Banking (2/3)**:
+
 - ✅ `GET /accounts/balances` - All account balances
 - ✅ `GET /accounts/{accountId}/transactions` - Account transactions with filters
 
 **Brokerage (2/20)**:
+
 - ✅ `GET /depot` - All depots
 - ✅ `GET /depot/{depotId}/positions` - All depot positions
 - ✅ `GET /depot/{depotId}/positions/{positionId}` - Single position details
 - ✅ `GET /depot/{depotId}/transactions` - Depot transactions
 
 **Instruments (1/1)**:
+
 - ✅ `GET /instruments/{instrumentId}` - Instrument details (WKN/ISIN)
 
 **Messages (3/3)**:
+
 - ✅ `GET /messages/documents` - List documents (statements, confirmations)
 - ✅ `GET /messages/documents/{documentId}` - Download document
 - ✅ `GET /messages/predocuments/{documentId}` - Download predocument
@@ -366,6 +394,7 @@ When adding new API endpoints:
 1. **Create Pydantic Models** in appropriate `models/` file
 2. **Add Client Method** to `ComdirectClient` class
 3. **Use Standard Pattern**:
+
    ```python
    async def get_resource(self, resource_id: str) -> ResourceModel:
        """Brief description of operation."""
@@ -380,6 +409,7 @@ When adding new API endpoints:
        response.raise_for_status()
        return ResourceModel(**response.json())
    ```
+
 4. **Add Tests** in corresponding `tests/test_*.py` file
 5. **Update Public API** in `models/__init__.py` if exposing new top-level model
 6. **Document** in README.md API coverage section
@@ -414,18 +444,6 @@ class Paging(ComdirectBaseModel):
 ```
 
 Clients can request specific pages using query parameters or limit result count.
-
-## Future Modularization
-
-The `clients/` directory is prepared for future refactoring to split the monolithic `client.py`:
-
-- `auth.py` - Authentication operations
-- `banking.py` - Banking account operations
-- `brokerage.py` - Depot and position operations
-- `session.py` - Session management
-- `base.py` - Shared base client class
-
-This is a **future enhancement** - current implementation uses single `client.py` for simplicity.
 
 ## Integration Points
 
@@ -513,32 +531,37 @@ git push
 ### Common Issues
 
 **Issue**: "Session TAN activation failed"
+
 - **Cause**: TAN not approved on mobile device
 - **Solution**: Check mobile app, approve push notification
 
 **Issue**: "Token expired" errors
+
 - **Cause**: Token refresh failed or session timeout
 - **Solution**: Re-authenticate using `ComdirectClient.create()`
 
 **Issue**: "HTTP 401 Unauthorized"
+
 - **Cause**: Invalid credentials or session expired
 - **Solution**: Verify `.env` credentials, check session state
 
 **Issue**: Import errors for models
+
 - **Cause**: Importing internal models not in `__all__`
 - **Solution**: Import top-level response models only
 
 ## Resources
 
-- **Comdirect API Documentation**: https://www.comdirect.de
+- **Comdirect API Documentation**: <https://www.comdirect.de>
 - **API Specification**: `docs/swagger.json`
-- **Original Implementation**: https://github.com/keisentraut/python-comdirect-api
-- **Pydantic Documentation**: https://docs.pydantic.dev/
-- **httpx Documentation**: https://www.python-httpx.org/
+- **Original Implementation**: <https://github.com/keisentraut/python-comdirect-api>
+- **Pydantic Documentation**: <https://docs.pydantic.dev/>
+- **httpx Documentation**: <https://www.python-httpx.org/>
 
 ## Changelog
 
 ### Current Version
+
 - Messages API implementation (3 GET endpoints)
 - Base model architecture with automatic camelCase conversion
 - 78 tests with 83% coverage
@@ -546,6 +569,7 @@ git push
 - Comprehensive error handling and token management
 
 ### Next Steps
+
 - Implement remaining GET endpoints (Orders, Reports)
 - Add rate limiting support
 - Consider modularization of `client.py`
