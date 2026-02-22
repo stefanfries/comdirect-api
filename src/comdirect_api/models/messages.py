@@ -35,7 +35,7 @@ class Document(ComdirectBaseModel):
     name: str = Field(
         ...,
         description="Name or description of the document",
-        max_length=50,
+        max_length=200,
     )
     date_creation: str = Field(
         ...,
