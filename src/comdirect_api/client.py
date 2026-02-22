@@ -28,7 +28,9 @@ from typing import Any
 import httpx
 
 from .models.accounts import AccountBalances
-from .models.depots import AccountDepots
+from .models.depots import AccountDepots, DepotPosition, DepotPositions
+from .models.instruments import Instruments
+from .models.transactions import AccountTransactions, DepotTransactions
 from .utils import timestamp
 
 
@@ -492,3 +494,213 @@ class ComdirectClient:
             response.raise_for_status()
             depots = response.json()
             return AccountDepots(**depots)
+
+    async def get_account_transactions(
+        self,
+        account_id: str,
+        transaction_state: str = "BOTH",
+        transaction_direction: str = "CREDIT_AND_DEBIT",
+        paging_first: int = 0,
+        with_attr: str | None = None,
+    ) -> AccountTransactions:
+        """
+        Get transactions for a specific account.
+
+        Args:
+            account_id: Account identifier (UUID)
+            transaction_state: BOOKED, NOTBOOKED, or BOTH (default)
+            transaction_direction: CREDIT, DEBIT, or CREDIT_AND_DEBIT (default)
+            paging_first: Index of the first transaction (default: 0)
+            with_attr: Additional attributes to load (e.g., "account")
+
+        Returns:
+            AccountTransactions object with list of transactions
+        """
+        if self.is_token_expired():
+            await self.refresh_access_token()
+
+        async with httpx.AsyncClient() as client:
+            url = f"{self.BASE_URL}/banking/v1/accounts/{account_id}/transactions"
+            if not self.banking_access_token:
+                raise ValueError(
+                    "No banking access token available. Please obtain banking access first."
+                )
+            headers = self._request_headers(self.banking_access_token)
+
+            params = {
+                "transactionState": transaction_state,
+                "transactionDirection": transaction_direction,
+                "paging-first": paging_first,
+            }
+            if with_attr:
+                params["with-attr"] = with_attr
+
+            response = await client.get(url=url, headers=headers, params=params)
+            response.raise_for_status()
+            transactions = response.json()
+            return AccountTransactions(**transactions)
+
+    async def get_depot_positions(
+        self,
+        depot_id: str,
+        instrument_id: str | None = None,
+        with_attr: str | None = None,
+        without_attr: list[str] | None = None,
+    ) -> DepotPositions:
+        """
+        Get securities positions for a specific depot.
+
+        Args:
+            depot_id: Depot identifier (UUID)
+            instrument_id: Optional filter by instrument (WKN, ISIN, or UUID)
+            with_attr: Additional attributes to enable (e.g., "instrument")
+            without_attr: Attributes to disable (e.g., ["depot", "positions"])
+
+        Returns:
+            DepotPositions object with list of positions
+        """
+        if self.is_token_expired():
+            await self.refresh_access_token()
+
+        async with httpx.AsyncClient() as client:
+            url = f"{self.BASE_URL}/brokerage/v3/depots/{depot_id}/positions"
+            if not self.banking_access_token:
+                raise ValueError(
+                    "No banking access token available. Please obtain banking access first."
+                )
+            headers = self._request_headers(self.banking_access_token)
+
+            params = {}
+            if instrument_id:
+                params["instrumentId"] = instrument_id
+            if with_attr:
+                params["with-attr"] = with_attr
+            if without_attr:
+                params["without-attr"] = without_attr
+
+            response = await client.get(url=url, headers=headers, params=params)
+            response.raise_for_status()
+            positions = response.json()
+            return DepotPositions(**positions)
+
+    async def get_depot_position(
+        self, depot_id: str, position_id: str, with_attr: str | None = None
+    ) -> DepotPosition:
+        """
+        Get a single position from a depot.
+
+        Args:
+            depot_id: Depot identifier (UUID)
+            position_id: Position identifier (UUID)
+            with_attr: Additional attributes to enable (e.g., "instrument")
+
+        Returns:
+            DepotPosition object
+        """
+        if self.is_token_expired():
+            await self.refresh_access_token()
+
+        async with httpx.AsyncClient() as client:
+            url = (
+                f"{self.BASE_URL}/brokerage/v3/depots/{depot_id}"
+                f"/positions/{position_id}"
+            )
+            if not self.banking_access_token:
+                raise ValueError(
+                    "No banking access token available. Please obtain banking access first."
+                )
+            headers = self._request_headers(self.banking_access_token)
+
+            params = {}
+            if with_attr:
+                params["with-attr"] = with_attr
+
+            response = await client.get(url=url, headers=headers, params=params)
+            response.raise_for_status()
+            position = response.json()
+            return DepotPosition(**position)
+
+    async def get_depot_transactions(
+        self,
+        depot_id: str,
+        isin: str | None = None,
+        wkn: str | None = None,
+        instrument_id: str | None = None,
+        min_booking_date: str = "-180d",
+    ) -> DepotTransactions:
+        """
+        Get transactions for a specific depot.
+
+        Args:
+            depot_id: Depot identifier (UUID)
+            isin: Optional filter by ISIN
+            wkn: Optional filter by WKN
+            instrument_id: Optional filter by instrument ID (UUID)
+            min_booking_date: Earliest booking date (YYYY-MM-DD or offset like "-180d")
+
+        Returns:
+            DepotTransactions object with list of transactions
+        """
+        if self.is_token_expired():
+            await self.refresh_access_token()
+
+        async with httpx.AsyncClient() as client:
+            url = f"{self.BASE_URL}/brokerage/v3/depots/{depot_id}/transactions"
+            if not self.banking_access_token:
+                raise ValueError(
+                    "No banking access token available. Please obtain banking access first."
+                )
+            headers = self._request_headers(self.banking_access_token)
+
+            params = {"min-bookingDate": min_booking_date}
+            if isin:
+                params["isin"] = isin
+            if wkn:
+                params["wkn"] = wkn
+            if instrument_id:
+                params["instrumentId"] = instrument_id
+
+            response = await client.get(url=url, headers=headers, params=params)
+            response.raise_for_status()
+            transactions = response.json()
+            return DepotTransactions(**transactions)
+
+    async def get_instrument(
+        self,
+        instrument_id: str,
+        with_attr: list[str] | None = None,
+        without_attr: list[str] | None = None,
+    ) -> Instruments:
+        """
+        Get information about an instrument.
+
+        Args:
+            instrument_id: Instrument identification (WKN, ISIN, or symbol)
+            with_attr: Additional attributes to enable
+                      (e.g., ["orderDimensions", "fundDistribution", "derivativeData"])
+            without_attr: Attributes to disable (e.g., ["staticData"])
+
+        Returns:
+            Instruments object (note: API returns a list even for single instrument)
+        """
+        if self.is_token_expired():
+            await self.refresh_access_token()
+
+        async with httpx.AsyncClient() as client:
+            url = f"{self.BASE_URL}/brokerage/v1/instruments/{instrument_id}"
+            if not self.banking_access_token:
+                raise ValueError(
+                    "No banking access token available. Please obtain banking access first."
+                )
+            headers = self._request_headers(self.banking_access_token)
+
+            params = {}
+            if with_attr:
+                params["with-attr"] = with_attr
+            if without_attr:
+                params["without-attr"] = without_attr
+
+            response = await client.get(url=url, headers=headers, params=params)
+            response.raise_for_status()
+            instruments = response.json()
+            return Instruments(**instruments)

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from decimal import Decimal
+
 from . import ComdirectBaseModel
+from .instruments import Instrument
 
 
 class Paging(ComdirectBaseModel):
@@ -42,3 +45,41 @@ class AccountDepots(ComdirectBaseModel):
 
     paging: Paging
     values: list[Depot]
+
+
+class Price(ComdirectBaseModel):
+    """Price information."""
+
+    price: dict | None = None  # AmountValue
+    price_datetime: str | None = None
+
+
+class DepotPosition(ComdirectBaseModel):
+    """Securities position in a depot."""
+
+    depot_id: str | None = None
+    position_id: str | None = None
+    wkn: str | None = None
+    custody_type: str | None = None
+    quantity: dict | None = None  # AmountValue
+    available_quantity: dict | None = None  # AmountValue
+    current_price: Price | None = None
+    purchase_price: dict | None = None  # AmountValue
+    prev_day_price: Price | None = None
+    current_value: dict | None = None  # AmountValue
+    purchase_value: dict | None = None  # AmountValue
+    prev_day_value: dict | None = None  # AmountValue
+    profit_loss_purchase_abs: dict | None = None  # AmountValue
+    profit_loss_purchase_rel: Decimal | None = None  # PercentageString
+    profit_loss_prev_day_abs: dict | None = None  # AmountValue
+    profit_loss_prev_day_rel: Decimal | None = None  # PercentageString
+    instrument: Instrument | None = None
+    version: str | None = None
+
+
+class DepotPositions(ComdirectBaseModel):
+    """List of depot positions."""
+
+    paging: dict
+    values: list[DepotPosition]
+    aggregated: dict | None = None
