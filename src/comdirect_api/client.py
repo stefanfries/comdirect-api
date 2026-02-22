@@ -32,6 +32,7 @@ from .models.accounts import AccountBalances
 from .models.auth import AuthResponse
 from .models.depots import AccountDepots, DepotPosition, DepotPositions
 from .models.instruments import Instruments
+from .models.messages import Documents
 from .models.transactions import AccountTransactions, DepotTransactions
 from .utils import timestamp
 
@@ -844,3 +845,130 @@ class ComdirectClient:
             response.raise_for_status()
             instruments = response.json()
             return Instruments(**instruments)
+
+    # ==================== MESSAGES ====================
+
+    async def get_documents(
+        self,
+        paging_first: int = 0,
+        paging_count: int = 20,
+    ) -> Documents:
+        """
+        Get a list of documents for the customer.
+
+        Documents include statements, trade confirmations, tax reports, and other
+        communications from Comdirect.
+
+        Args:
+            paging_first: Index of the first result to return (default: 0)
+            paging_count: Maximum number of results to return (default: 20, max: 1000)
+
+        Returns:
+            Documents object containing a list of Document objects with metadata
+
+        Raises:
+            ValueError: If no banking access token is available
+        """
+        if not self.banking_access_token:
+            raise ValueError(
+                "No banking access token available. Please obtain banking access first."
+            )
+
+        if self.is_token_expired():
+            await self.refresh_access_token()
+
+        async with httpx.AsyncClient() as client:
+            url = f"{self.BASE_URL}/messages/clients/user/v2/documents"
+            headers = self._request_headers(self.banking_access_token)
+
+            params = {
+                "paging-first": paging_first,
+                "paging-count": min(paging_count, 1000),  # API max is 1000
+            }
+
+            logger.debug(f"Fetching documents list with params: {params}")
+            response = await client.get(url=url, headers=headers, params=params)
+            response.raise_for_status()
+            documents = response.json()
+            logger.info(
+                f"Retrieved {len(documents.get('values', []))} documents"
+            )
+            return Documents(**documents)
+
+    async def get_document(
+        self,
+        document_id: str,
+    ) -> bytes:
+        """
+        Download a document by its ID.
+
+        The document is typically returned as a PDF or HTML file.
+
+        Args:
+            document_id: The unique ID (UUID) of the document
+
+        Returns:
+            Raw bytes of the document (typically PDF or HTML)
+
+        Raises:
+            ValueError: If no banking access token is available
+        """
+        if not self.banking_access_token:
+            raise ValueError(
+                "No banking access token available. Please obtain banking access first."
+            )
+
+        if self.is_token_expired():
+            await self.refresh_access_token()
+
+        async with httpx.AsyncClient() as client:
+            url = f"{self.BASE_URL}/messages/v2/documents/{document_id}"
+            headers = self._request_headers(self.banking_access_token)
+
+            logger.debug(f"Downloading document: {document_id}")
+            response = await client.get(url=url, headers=headers)
+            response.raise_for_status()
+            logger.info(
+                f"Downloaded document {document_id} "
+                f"({len(response.content)} bytes, {response.headers.get('content-type')})"
+            )
+            return response.content
+
+    async def get_predocument(
+        self,
+        document_id: str,
+    ) -> bytes:
+        """
+        Download a predocument by its document ID.
+
+        A predocument is a preview or preliminary version of a document.
+
+        Args:
+            document_id: The unique ID (UUID) of the document
+
+        Returns:
+            Raw bytes of the predocument (typically PDF or HTML)
+
+        Raises:
+            ValueError: If no banking access token is available
+        """
+        if not self.banking_access_token:
+            raise ValueError(
+                "No banking access token available. Please obtain banking access first."
+            )
+
+        if self.is_token_expired():
+            await self.refresh_access_token()
+
+        async with httpx.AsyncClient() as client:
+            url = f"{self.BASE_URL}/messages/v2/documents/{document_id}/predocument"
+            headers = self._request_headers(self.banking_access_token)
+
+            logger.debug(f"Downloading predocument for: {document_id}")
+            response = await client.get(url=url, headers=headers)
+            response.raise_for_status()
+            logger.info(
+                f"Downloaded predocument for {document_id} "
+                f"({len(response.content)} bytes, {response.headers.get('content-type')})"
+            )
+            return response.content

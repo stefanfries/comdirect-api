@@ -4,6 +4,8 @@ import re
 
 from pydantic import BaseModel, ConfigDict
 
+from .messages import Document, DocumentMetadata, Documents
+
 
 def to_camel(s: str) -> str:
     """

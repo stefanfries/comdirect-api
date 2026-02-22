@@ -139,6 +139,34 @@ async def main():
     except Exception as e:
         print("Error retrieving depots:", e)
 
+    # ========== MESSAGES FEATURES ==========
+
+    # Get documents
+    try:
+        print("\n--- Documents ---")
+        documents = await client.get_documents(paging_count=10)
+        print(f"Number of documents: {len(documents.values)}")
+
+        for doc in documents.values[:5]:  # Show first 5
+            doc_id = doc.document_id
+            name = doc.name
+            date = doc.date_creation
+            mime = doc.mime_type
+            read = doc.document_meta_data.already_read if doc.document_meta_data else False
+            print(f"  - {date}: {name} ({mime}) - Read: {read}")
+
+            # Download first document as example (commented out to avoid downloading all)
+            # if doc.document_id:
+            #     print(f"\n--- Downloading Document {doc.document_id} ---")
+            #     content = await client.get_document(doc.document_id)
+            #     filename = f"{doc.name.replace(' ', '_')}.pdf"
+            #     with open(filename, 'wb') as f:
+            #         f.write(content)
+            #     print(f"Saved to {filename} ({len(content)} bytes)")
+
+    except Exception as e:
+        print("Error retrieving documents:", e)
+
 
 if __name__ == "__main__":
     asyncio.run(main())
