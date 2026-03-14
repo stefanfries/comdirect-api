@@ -1,14 +1,16 @@
 """Base models and utilities for Comdirect API models."""
 
 # Only expose top-level response models that are returned by public client methods
-from .accounts import AccountBalances
+from .accounts import AccountBalance, AccountBalances
 from .depots import AccountDepots, DepotPosition, DepotPositions
 from .instruments import Instruments
 from .messages import Documents
+from .reports import AllBalances
 from .transactions import AccountTransactions, DepotTransactions
 
 __all__ = [
     # Main response models returned by client methods
+    "AccountBalance",       # from get_account_balance()
     "AccountBalances",      # from get_account_balances()
     "AccountTransactions",  # from get_account_transactions()
     "AccountDepots",        # from get_account_depots()
@@ -17,5 +19,6 @@ __all__ = [
     "DepotTransactions",    # from get_depot_transactions()
     "Instruments",          # from get_instrument()
     "Documents",            # from get_documents()
+    "AllBalances",          # from get_all_balances()
 ]
 

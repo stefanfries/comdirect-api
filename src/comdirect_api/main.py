@@ -16,66 +16,41 @@ logging.basicConfig(
 )
 
 
+def format_iban(iban: str) -> str:
+    """Format raw IBAN string with spaces every 4 characters."""
+    iban = iban.replace(" ", "")
+    return " ".join(iban[i:i+4] for i in range(0, len(iban), 4))
+
+
 def format_remittance_info(remittance_info: str | None) -> str:
-    """Format remittance info by parsing line number markers (01, 02, 03, etc.).
-
-    Banking systems use multi-line remittance info with prefixes like:
-    '01Purpose line 1            02Purpose line 2'
-
-    This function splits them into a cleaner format.
-
-    Args:
-        remittance_info: Raw remittance information string
-
-    Returns:
-        Formatted string with lines separated by ' | '
-    """
+    """Format remittance info by parsing line number markers (01, 02, 03, etc.)."""
     if not remittance_info:
         return "N/A"
-
-    # Remove line number prefixes and split into parts
-    # Pattern: 2 digits followed by non-digit content until next 2-digit prefix
-    # This handles: "01Text here    02More text    03Even more"
     parts = re.split(r'\d{2}', remittance_info)
-
-    # Filter out empty strings and clean whitespace
     cleaned_parts = [part.strip() for part in parts if part.strip()]
-
-    # Limit to first 3 meaningful parts
     if cleaned_parts:
         return " | ".join(cleaned_parts[:3])
-
-    # Fallback: just return cleaned string
     return remittance_info.strip()[:100]
 
 
 async def main():
-    """Example script to demonstrate simplified ComdirectClient usage."""
-
-    # Simple factory pattern - one line authentication!
-    # All authentication steps are handled automatically:
-    # 1. Primary OAuth authentication
-    # 2. Session status check
-    # 3. TAN challenge (wait for push notification)
-    # 4. Banking/brokerage access token
+    """Example script to demonstrate ComdirectClient usage."""
 
     client = await ComdirectClient.create()
     print(f"Client ready! ID: {client.client_id}\n")
 
     # ========== BANKING FEATURES ==========
 
-    # Get account balances
     try:
         print("\n--- Account Balances ---")
         account_balances = await client.get_account_balances()
 
         for balance in account_balances.values:
-            account_id = balance.account_id
-            balance_value = balance.balance.value
-            currency = balance.balance.unit
-            print(f"Account ID: {account_id}, Balance: {balance_value} {currency}")
+            print(
+                f"Account ID: {balance.account_id}, "
+                f"Balance: {balance.balance.value} {balance.balance.unit}"
+            )
 
-        # Get transactions for first account
         if account_balances.values:
             first_account_id = account_balances.values[0].account_id
             print(f"\n--- Transactions for Account {first_account_id} ---")
@@ -84,7 +59,7 @@ async def main():
                     account_id=first_account_id, paging_first=0
                 )
                 print(f"Number of transactions: {len(transactions.values)}")
-                for txn in transactions.values[:5]:  # Show first 5
+                for txn in transactions.values[:5]:
                     date_str = txn.booking_date if txn.booking_date else "N/A"
                     amount_val = txn.amount.get("value") if txn.amount else "N/A"
                     amount_unit = txn.amount.get("unit") if txn.amount else ""
@@ -98,64 +73,52 @@ async def main():
 
     # ========== BROKERAGE FEATURES ==========
 
-    # Get depot information
     try:
         print("\n--- Depots ---")
         account_depots = await client.get_account_depots()
 
         for depot in account_depots.values:
             depot_id = depot.depot_id
-            depot_display_id = depot.depot_display_id
-            depot_type = depot.depot_type
-
             print(f"Depot ID: {depot_id}")
-            print(f"Depot Display ID: {depot_display_id}")
-            print(f"Depot Type: {depot_type}")
+            print(f"Depot Display ID: {depot.depot_display_id}")
+            print(f"Depot Type: {depot.depot_type}")
 
-            # Get depot positions
             print(f"\n--- Positions for Depot {depot_id} ---")
             try:
                 positions = await client.get_depot_positions(
                     depot_id=depot_id, with_attr="instrument"
                 )
                 print(f"Number of positions: {len(positions.values)}")
-                for pos in positions.values[:10]:  # Show first 10
+                for pos in positions.values[:10]:
                     wkn = pos.wkn or "N/A"
                     instrument_name = pos.instrument.name if pos.instrument else "N/A"
-                    current_value = (
-                        pos.current_value.get("value") if pos.current_value else "N/A"
-                    )
-                    current_unit = (
-                        pos.current_value.get("unit") if pos.current_value else ""
-                    )
+                    quantity_val = pos.quantity.get("value") if pos.quantity else "N/A"
+                    quantity_unit = pos.quantity.get("unit") if pos.quantity else ""
+                    current_value = pos.current_value.get("value") if pos.current_value else "N/A"
+                    current_unit = pos.current_value.get("unit") if pos.current_value else ""
                     print(
                         f"  - {wkn}: {instrument_name} - "
+                        f"Qty: {quantity_val} {quantity_unit} - "
                         f"Value: {current_value} {current_unit}"
                     )
             except Exception as e:
                 print(f"No positions found: {e}")
 
-            # Get depot transactions
             print(f"\n--- Transactions for Depot {depot_id} ---")
             try:
                 depot_txns = await client.get_depot_transactions(
                     depot_id=depot_id, min_booking_date="-90d"
                 )
                 print(f"Number of depot transactions: {len(depot_txns.values)}")
-                for txn in depot_txns.values[:5]:  # Show first 5
+                for txn in depot_txns.values[:5]:
                     date_str = txn.booking_date if txn.booking_date else "N/A"
                     txn_type = txn.transaction_type or "N/A"
                     qty_val = txn.quantity.get("value") if txn.quantity else "N/A"
-                    price_val = (
-                        txn.execution_price.get("value")
-                        if txn.execution_price
-                        else "N/A"
-                    )
+                    price_val = txn.execution_price.get("value") if txn.execution_price else "N/A"
                     print(f"  - {date_str}: {txn_type} - {qty_val} @ {price_val}")
             except Exception as e:
                 print(f"No depot transactions found: {e}")
 
-            # Get instrument details (if positions available)
             if positions and positions.values and positions.values[0].wkn:
                 wkn = positions.values[0].wkn
                 print(f"\n--- Instrument Details for WKN {wkn} ---")
@@ -180,30 +143,83 @@ async def main():
 
     # ========== MESSAGES FEATURES ==========
 
-    # Get documents
     try:
         print("\n--- Documents ---")
         documents = await client.get_documents(paging_count=10)
         print(f"Number of documents: {len(documents.values)}")
 
-        for doc in documents.values[:5]:  # Show first 5
-            name = doc.name
-            date = doc.date_creation
-            mime = doc.mime_type
+        for doc in documents.values[:5]:
             read = doc.document_meta_data.already_read if doc.document_meta_data else False
-            print(f"  - {date}: {name} ({mime}) - Read: {read}")
-
-            # Download first document as example (commented out to avoid downloading all)
-            # if doc.document_id:
-            #     print(f"\n--- Downloading Document {doc.document_id} ---")
-            #     content = await client.get_document(doc.document_id)
-            #     filename = f"{doc.name.replace(' ', '_')}.pdf"
-            #     with open(filename, 'wb') as f:
-            #         f.write(content)
-            #     print(f"Saved to {filename} ({len(content)} bytes)")
+            print(f"  - {doc.date_creation}: {doc.name} ({doc.mime_type}) - Read: {read}")
 
     except Exception as e:
         print("Error retrieving documents:", e)
+
+    # ========== REPORTS FEATURES ==========
+
+    try:
+        print("\n--- All Product Balances (Reports) ---")
+        all_balances = await client.get_all_balances()
+        print(f"Total products: {all_balances.paging.matches}")
+        if all_balances.aggregated and all_balances.aggregated.balance_eur:
+            agg_val = all_balances.aggregated.balance_eur.get("value")
+            agg_unit = all_balances.aggregated.balance_eur.get("unit", "EUR")
+            print(f"Aggregated balance: {agg_val} {agg_unit}")
+        for pb in all_balances.values:
+            print(f"  - {pb.product_type}: {pb.product_id}")
+    except Exception as e:
+        print("Error retrieving all balances:", e)
+
+    # ========== PORTFOLIO SUMMARY TABLE ==========
+
+    from decimal import Decimal
+
+    col_name  = 26
+    col_ident = 33
+    col_value = 16
+
+    def row(name: str, ident: str, value: Decimal | None) -> str:
+        val_str = f"{value:,.2f}" if value is not None else ""
+        return f"│ {name:<{col_name}} │ {ident:<{col_ident}} │ {val_str:>{col_value}} │"
+
+    top    = f"┌{'─'*(col_name+2)}┬{'─'*(col_ident+2)}┬{'─'*(col_value+2)}┐"
+    mid    = f"├{'─'*(col_name+2)}┼{'─'*(col_ident+2)}┼{'─'*(col_value+2)}┤"
+    bot    = f"└{'─'*(col_name+2)}┴{'─'*(col_ident+2)}┴{'─'*(col_value+2)}┘"
+    header = (
+        f"│ {'Product':<{col_name}} │ {'IBAN / Number':<{col_ident}} │"
+        f" {'Value (EUR)':>{col_value}} │"
+    )
+
+    # Collect all data before printing anything
+    total = Decimal(0)
+    table_rows = []
+
+    for ab in account_balances.values:
+        name  = ab.account.account_type.text
+        iban  = format_iban(ab.account.iban)
+        value = ab.balance_eur.value
+        total += value
+        table_rows.append((name, iban, value))
+
+    for depot in account_depots.values:
+        positions = await client.get_depot_positions(depot_id=depot.depot_id)
+        depot_total = sum(
+            Decimal(str(pos.current_value["value"]))
+            for pos in positions.values
+            if pos.current_value and pos.current_value.get("value") is not None
+        )
+        total += depot_total
+        table_rows.append(("Depot", depot.depot_display_id, depot_total))
+
+    print("\n--- Portfolio Summary ---")
+    print(top)
+    print(header)
+    print(mid)
+    for name, ident, value in table_rows:
+        print(row(name, ident, value))
+    print(mid)
+    print(row("Total", "", total))
+    print(bot)
 
 
 if __name__ == "__main__":

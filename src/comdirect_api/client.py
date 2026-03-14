@@ -28,11 +28,12 @@ from typing import Any
 
 import httpx
 
-from .models.accounts import AccountBalances
+from .models.accounts import AccountBalance, AccountBalances
 from .models.auth import AuthResponse
 from .models.depots import AccountDepots, DepotPosition, DepotPositions
 from .models.instruments import Instruments
 from .models.messages import Documents
+from .models.reports import AllBalances
 from .models.transactions import AccountTransactions, DepotTransactions
 from .utils import timestamp
 
@@ -574,7 +575,36 @@ class ComdirectClient:
             self.kontaktid = auth_response.kontakt_id  # Interne Identifikationsnummer
             return data
 
+    async def revoke_access_token(self) -> None:
+        """
+        Revoke the current access token and its associated refresh token.
 
+        After successful revocation, the access token, refresh token, and session TAN
+        are all invalidated. Returns 204 No Content on success.
+
+        Raises:
+            ValueError: If no access token is available.
+        """
+        token = self.banking_access_token or self.primary_access_token
+        if not token:
+            raise ValueError("No access token available. Please authenticate first.")
+
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Accept": "application/json",
+        }
+        revoke_url = self.OAUTH_URL.replace("/token", "/revoke")
+        async with httpx.AsyncClient() as client:
+            response = await client.delete(revoke_url, headers=headers)
+            response.raise_for_status()
+
+        # Clear local token state
+        self.primary_access_token = ""
+        self.banking_access_token = ""
+        self.refresh_token = ""
+        self.token_expires_at = 0.0
+        logger.info("Access token revoked successfully.")
 
     def is_token_expired(self) -> bool:
         """Check if the access token is expired."""
@@ -605,6 +635,32 @@ class ComdirectClient:
             response.raise_for_status()
             account_balances = response.json()
             return AccountBalances(**account_balances)
+
+    async def get_account_balance(self, account_id: str) -> AccountBalance:
+        """
+        Get the balance for a single account by its ID.
+
+        Args:
+            account_id: Account identifier (UUID)
+
+        Returns:
+            AccountBalance object for the specified account
+        """
+        if not self.banking_access_token:
+            raise ValueError(
+                "No banking access token available. Please obtain banking access first."
+            )
+
+        if self.is_token_expired():
+            await self.refresh_access_token()
+
+        async with httpx.AsyncClient() as client:
+            url = f"{self.BASE_URL}/banking/v2/accounts/{account_id}/balances"
+            headers = self._request_headers(self.banking_access_token)
+
+            response = await client.get(url=url, headers=headers)
+            response.raise_for_status()
+            return AccountBalance(**response.json())
 
     async def get_account_depots(self) -> AccountDepots:
         """Get the account depots."""
@@ -972,3 +1028,46 @@ class ComdirectClient:
                 f"({len(response.content)} bytes, {response.headers.get('content-type')})"
             )
             return response.content
+
+    # ==================== REPORTS API ====================
+
+    async def get_all_balances(
+        self,
+        product_type: str | None = None,
+        client_connection_type: str | None = None,
+    ) -> AllBalances:
+        """
+        Get aggregated balances across all comdirect products.
+
+        Returns balances for accounts, cards, depots, loans, and fixed-term savings
+        in a single call.
+
+        Args:
+            product_type: Optional comma-separated filter, e.g. "ACCOUNT,DEPOT".
+                          Valid values: ACCOUNT, CARD, DEPOT, LOAN, SAVINGS
+            client_connection_type: Optional filter: CURRENT_CLIENT or OTHER_COMDIRECT
+
+        Returns:
+            AllBalances object with a list of ProductBalance entries and aggregated totals
+        """
+        if not self.banking_access_token:
+            raise ValueError(
+                "No banking access token available. Please obtain banking access first."
+            )
+
+        if self.is_token_expired():
+            await self.refresh_access_token()
+
+        async with httpx.AsyncClient() as client:
+            url = f"{self.BASE_URL}/reports/participants/user/v1/allbalances"
+            headers = self._request_headers(self.banking_access_token)
+
+            params: dict = {}
+            if product_type:
+                params["productType"] = product_type
+            if client_connection_type:
+                params["clientConnectionType"] = client_connection_type
+
+            response = await client.get(url=url, headers=headers, params=params)
+            response.raise_for_status()
+            return AllBalances(**response.json())

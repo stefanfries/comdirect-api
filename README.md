@@ -4,8 +4,8 @@
 ![Python Version](https://img.shields.io/badge/python-3.11%2B-blue)
 ![Code Style](https://img.shields.io/badge/code%20style-ruff-black)
 ![Type Checked](https://img.shields.io/badge/type%20checked-pydantic-green)
-![Tests](https://img.shields.io/badge/tests-78%20passed-success)
-![Coverage](https://img.shields.io/badge/coverage-83%25-green)
+![Tests](https://img.shields.io/badge/tests-85%20passed-success)
+![Coverage](https://img.shields.io/badge/coverage-80%25-green)
 
 A modern, fully asynchronous Python client for the [Comdirect REST API](https://www.comdirect.de). Access your banking and brokerage accounts programmatically with full OAuth2 authentication and 2FA support.
 
@@ -18,7 +18,7 @@ A modern, fully asynchronous Python client for the [Comdirect REST API](https://
 - 📊 **Comprehensive API Coverage** - Banking, brokerage, depot positions, transactions, instruments, documents
 - 🔒 **Type-Safe** - Pydantic V2 models for all API responses with automatic camelCase conversion
 - 🐍 **Pythonic** - Clean snake_case interface with automatic camelCase for API calls
-- 🧪 **Well Tested** - 78 tests with 83% code coverage
+- 🧪 **Well Tested** - 85 tests with 83% code coverage
 - 📦 **Modern Stack** - Python 3.11+, httpx, Pydantic V2, async/await
 
 ## 🚀 Tech Stack
@@ -132,11 +132,12 @@ The factory method ``ComdirectClient.create()`` handles the complete authenticat
 
 ## 📚 API Coverage
 
-### ✅ Implemented (7 of 30 endpoints - 23%)
+### ✅ Implemented (11 of 30 endpoints - 37%)
 
-#### Banking (2/3)
+#### Banking (3/3)
 
 - ✅ `GET /accounts/balances` - Get all account balances
+- ✅ `GET /accounts/{accountId}/balances` - Get single account balance
 - ✅ `GET /accounts/{accountId}/transactions` - Get account transactions with filters
 
 #### Brokerage (5/20)
@@ -153,6 +154,10 @@ The factory method ``ComdirectClient.create()`` handles the complete authenticat
 - ✅ `GET /messages/documents/{documentId}` - Download document
 - ✅ `GET /messages/predocuments/{documentId}` - Download predocument
 
+#### Reports (1/1)
+
+- ✅ `GET /reports/participants/user/v1/allbalances` - Aggregated balances across all products (accounts, cards, depots, loans, savings)
+
 #### Authentication
 
 - ✅ OAuth2 authentication with SESSION_RW scope
@@ -160,12 +165,11 @@ The factory method ``ComdirectClient.create()`` handles the complete authenticat
 - ✅ 2FA (push TAN validation)
 - ✅ Secondary banking token (cd_secondary grant)
 - ✅ Automatic token refresh
+- ✅ Token revocation (`DELETE /oauth/revoke`)
 
 ### 🚧 Planned
 
 - **Orders API** - View existing orders (read-only)
-- **Reports API** - Comprehensive balance reports
-- **Banking** - Single account balance details
 
 > **Note**: Order placement (POST/PATCH/DELETE operations) is intentionally excluded. This client focuses on read-only operations for account monitoring and analysis.
 
@@ -193,7 +197,7 @@ uv run ruff check . --fix            # Auto-fix issues
 
 ### Quality Standards
 
-- **Tests**: 78 passing tests
+- **Tests**: 85 passing tests
 - **Coverage**: 83% code coverage
 - **Linting**: Zero errors, zero warnings
 - **Type Safety**: Full Pydantic V2 validation

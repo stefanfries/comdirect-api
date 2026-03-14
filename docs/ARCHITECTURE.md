@@ -26,7 +26,7 @@ comdirect_api/
 │           ├── instruments.py  # Instrument data models
 │           ├── messages.py     # Documents & messages models
 │           └── transactions.py # Transaction models
-├── tests/                      # Test suite (78 tests, 83% coverage)
+├── tests/                      # Test suite (85 tests, 83% coverage)
 │   ├── __init__.py
 │   ├── conftest.py             # Shared test fixtures
 │   ├── test_auth.py            # Authentication tests
@@ -135,6 +135,7 @@ Models are organized by domain in separate files:
 | `depots.py` | Depot and position data | `AccountDepots`, `DepotPositions`, `DepotPosition` |
 | `instruments.py` | Instrument/security data | `Instruments`, `Instrument`, `StaticData` |
 | `messages.py` | Documents and messages | `Documents`, `Document`, `DocumentMetadata` |
+| `reports.py` | Reports / all-product balances | `AllBalances`, `ProductBalance`, `BalanceAggregation` |
 | `transactions.py` | Transaction data | `AccountTransactions`, `DepotTransactions` |
 
 ### Public API Models
@@ -143,6 +144,7 @@ Only **top-level response models** are exposed in `models/__init__.py`:
 
 ```python
 __all__ = [
+    "AccountBalance",       # from get_account_balance()
     "AccountBalances",      # from get_account_balances()
     "AccountTransactions",  # from get_account_transactions()
     "AccountDepots",        # from get_account_depots()
@@ -151,6 +153,7 @@ __all__ = [
     "DepotTransactions",    # from get_depot_transactions()
     "Instruments",          # from get_instrument()
     "Documents",            # from get_documents()
+    "AllBalances",          # from get_all_balances()
 ]
 ```
 
@@ -354,16 +357,17 @@ class Settings(BaseSettings):
 
 ## API Coverage Strategy
 
-### Current Coverage (7/30 endpoints - 23%)
+### Current Coverage (11/30 endpoints - 37%)
 
 #### Implemented Endpoints
 
-**Banking (2/3)**:
+**Banking (3/3)**:
 
 - ✅ `GET /accounts/balances` - All account balances
+- ✅ `GET /accounts/{accountId}/balances` - Single account balance by ID
 - ✅ `GET /accounts/{accountId}/transactions` - Account transactions with filters
 
-**Brokerage (2/20)**:
+**Brokerage (5/20)**:
 
 - ✅ `GET /depot` - All depots
 - ✅ `GET /depot/{depotId}/positions` - All depot positions
@@ -379,6 +383,14 @@ class Settings(BaseSettings):
 - ✅ `GET /messages/documents` - List documents (statements, confirmations)
 - ✅ `GET /messages/documents/{documentId}` - Download document
 - ✅ `GET /messages/predocuments/{documentId}` - Download predocument
+
+**Reports (1/1)**:
+
+- ✅ `GET /reports/participants/user/v1/allbalances` - Aggregated balances across all comdirect products
+
+**Authentication (additional)**:
+
+- ✅ `DELETE /oauth/revoke` - Token revocation
 
 #### Focus Areas
 
@@ -564,7 +576,7 @@ git push
 
 - Messages API implementation (3 GET endpoints)
 - Base model architecture with automatic camelCase conversion
-- 78 tests with 83% coverage
+- 85 tests with 83% coverage
 - Public API refinement (8 top-level models)
 - Comprehensive error handling and token management
 
