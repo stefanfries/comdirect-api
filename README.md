@@ -18,7 +18,7 @@ A modern, fully asynchronous Python client for the [Comdirect REST API](https://
 - 📊 **Comprehensive API Coverage** - Banking, brokerage, depot positions, transactions, instruments, documents
 - 🔒 **Type-Safe** - Pydantic V2 models for all API responses with automatic camelCase conversion
 - 🐍 **Pythonic** - Clean snake_case interface with automatic camelCase for API calls
-- 🧪 **Well Tested** - 85 tests with 83% code coverage
+- 🧪 **Well Tested** - 85 tests with 80% code coverage
 - 📦 **Modern Stack** - Python 3.11+, httpx, Pydantic V2, async/await
 
 ## 🚀 Tech Stack
@@ -198,7 +198,7 @@ uv run ruff check . --fix            # Auto-fix issues
 ### Quality Standards
 
 - **Tests**: 85 passing tests
-- **Coverage**: 83% code coverage
+- **Coverage**: 80% code coverage
 - **Linting**: Zero errors, zero warnings
 - **Type Safety**: Full Pydantic V2 validation
 
@@ -211,20 +211,21 @@ comdirect_api/
 ├── src/
 │   └── comdirect_api/          # Main package
 │       ├── __init__.py         # Package initialization
-│       ├── client.py           # Main API client class (978 lines)
+│       ├── client.py           # Main API client class (1073 lines)
 │       ├── main.py             # Example usage script
 │       ├── settings.py         # Environment configuration
 │       ├── utils.py            # Utility functions (timestamp)
 │       └── models/             # Pydantic V2 data models
-│           ├── __init__.py     # Public API exports (8 models)
+│           ├── __init__.py     # Public API exports (10 models)
 │           ├── base.py         # ComdirectBaseModel + utilities
 │           ├── accounts.py     # Account & balance models
 │           ├── auth.py         # Authentication models (internal)
 │           ├── depots.py       # Depot & position models
 │           ├── instruments.py  # Instrument data models
 │           ├── messages.py     # Documents & messages models
+│           ├── reports.py      # Reports & aggregated balance models
 │           └── transactions.py # Transaction models
-├── tests/                      # Test suite (78 tests, 83% coverage)
+├── tests/                      # Test suite (85 tests, 80% coverage)
 │   ├── conftest.py             # Shared test fixtures
 │   ├── test_auth.py            # Authentication tests
 │   ├── test_banking.py         # Banking operations tests
