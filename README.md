@@ -41,9 +41,6 @@ cd comdirect-api
 
 # Install with uv (recommended)
 uv sync
-
-# Or with pip
-pip install -r requirements.txt
 ```
 
 ## 🔧 Configuration
