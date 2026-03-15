@@ -100,26 +100,42 @@ class SyncService:
             return {"inserted": 0, "touched": 1}
 
         # Build full position list for the new snapshot
+        def _v(amount_value) -> str | None:
+            """Return str(value) or None from an AmountValue-like object."""
+            if amount_value and amount_value.value is not None:
+                return str(amount_value.value)
+            return None
+
+        def _u(amount_value) -> str | None:
+            """Return unit or None from an AmountValue-like object."""
+            return amount_value.unit if amount_value else None
+
         snapshot_positions = []
         for pos in positions.values:
             if not pos.position_id:
                 continue
+            cp = pos.current_price  # shorthand to keep lines short
             snapshot_positions.append({
                 "position_id": pos.position_id,
                 "wkn": pos.wkn,
                 "isin": pos.instrument.isin if pos.instrument else None,
                 "instrument_name": pos.instrument.name if pos.instrument else None,
                 "quantity": {
-                    "value": str(pos.quantity.value) if pos.quantity and pos.quantity.value is not None else None,
-                    "unit": pos.quantity.unit if pos.quantity else None,
+                    "value": _v(pos.quantity),
+                    "unit": _u(pos.quantity),
+                },
+                "current_price": {
+                    "value": _v(cp.price) if cp else None,
+                    "unit": _u(cp.price) if cp else None,
+                    "price_datetime": cp.price_datetime if cp else None,
                 },
                 "current_value": {
-                    "value": str(pos.current_value.value) if pos.current_value and pos.current_value.value is not None else None,
-                    "unit": pos.current_value.unit if pos.current_value else None,
+                    "value": _v(pos.current_value),
+                    "unit": _u(pos.current_value),
                 },
                 "purchase_price": {
-                    "value": str(pos.purchase_price.value) if pos.purchase_price and pos.purchase_price.value is not None else None,
-                    "unit": pos.purchase_price.unit if pos.purchase_price else None,
+                    "value": _v(pos.purchase_price),
+                    "unit": _u(pos.purchase_price),
                 },
             })
 

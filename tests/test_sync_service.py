@@ -1,11 +1,12 @@
 """Unit tests for SyncService — all external dependencies are mocked."""
 
-from datetime import date
+from datetime import UTC, date
 from decimal import Decimal
-from unittest.mock import AsyncMock, MagicMock, call
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from functions.sync.mongo_repo import _date_to_datetime, _decimal_to_str
 from functions.sync.sync_service import SyncService
 
 # ---------------------------------------------------------------------------
@@ -34,6 +35,7 @@ def _position(
     quantity: Decimal,
     current_value: Decimal,
     purchase_price: Decimal = Decimal("1.00"),
+    current_price: Decimal = Decimal("1.00"),
     isin: str = "DE000TEST001",
     instrument_name: str = "Test Instrument",
 ):
@@ -46,6 +48,9 @@ def _position(
     pos.current_value.unit = "EUR"
     pos.purchase_price.value = purchase_price
     pos.purchase_price.unit = "EUR"
+    pos.current_price.price.value = current_price
+    pos.current_price.price.unit = "EUR"
+    pos.current_price.price_datetime = "2026-03-15T22:00:00"
     pos.instrument.name = instrument_name
     pos.instrument.isin = isin
     return pos
@@ -162,11 +167,12 @@ async def test_sync_balances_multiple_accounts():
 
 @pytest.mark.asyncio
 async def test_sync_positions_no_snapshot_inserts():
-    """No existing snapshot — should insert a new one."""
+    """No existing snapshot — should insert a new one with all position fields."""
     client = AsyncMock()
     repo = MagicMock()
 
-    pos = _position("POS1", "A1B2C3", Decimal("1000"), Decimal("5000.00"))
+    pos = _position("POS1", "A1B2C3", Decimal("1000"), Decimal("5000.00"),
+                    current_price=Decimal("5.00"))
     client.get_depot_positions.return_value = MagicMock(values=[pos])
     repo.get_latest_depot_snapshot.return_value = None
 
@@ -176,6 +182,20 @@ async def test_sync_positions_no_snapshot_inserts():
     repo.insert_depot_snapshot.assert_called_once()
     repo.touch_depot_last_synced.assert_not_called()
     assert result == {"inserted": 1, "touched": 0}
+
+    # Verify snapshot contents include current_price alongside current_value
+    call_kwargs = repo.insert_depot_snapshot.call_args.kwargs
+    assert call_kwargs["depot_id"] == "DEPOT1"
+    positions = call_kwargs["positions"]
+    assert len(positions) == 1
+    p = positions[0]
+    assert p["position_id"] == "POS1"
+    assert p["quantity"] == {"value": "1000", "unit": "XXX"}
+    assert p["current_price"]["value"] == "5.00"
+    assert p["current_price"]["unit"] == "EUR"
+    assert p["current_price"]["price_datetime"] == "2026-03-15T22:00:00"
+    assert p["current_value"] == {"value": "5000.00", "unit": "EUR"}
+    assert p["purchase_price"] == {"value": "1.00", "unit": "EUR"}
 
 
 @pytest.mark.asyncio
@@ -319,10 +339,6 @@ async def test_sync_transactions_mixed():
 # ---------------------------------------------------------------------------
 # helpers in mongo_repo (pure functions, no DB needed)
 # ---------------------------------------------------------------------------
-
-from datetime import UTC
-
-from functions.sync.mongo_repo import _date_to_datetime, _decimal_to_str
 
 
 def test_decimal_to_str_none():
