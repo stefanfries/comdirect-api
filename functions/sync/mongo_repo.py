@@ -4,7 +4,6 @@ from datetime import UTC, date, datetime
 from decimal import Decimal
 
 from pymongo import ASCENDING, DESCENDING, MongoClient
-from pymongo.collection import Collection
 from pymongo.database import Database
 
 
@@ -34,7 +33,9 @@ class MongoRepo:
         self._db["account_balances"].create_index(
             [("account_id", ASCENDING), ("recorded_at", DESCENDING)]
         )
-        self._db["depot_positions"].create_index("position_id", unique=True)
+        self._db["depot_snapshots"].create_index(
+            [("depot_id", ASCENDING), ("recorded_at", DESCENDING)]
+        )
         self._db["transactions"].create_index("transaction_id", unique=True)
 
     def close(self) -> None:
@@ -82,74 +83,45 @@ class MongoRepo:
         )
 
     # ------------------------------------------------------------------
-    # depot_positions — upsert; quantity_history on quantity change
+    # depot_snapshots — insert-only; one document = entire depot state
     # ------------------------------------------------------------------
 
-    def get_position(self, position_id: str) -> dict | None:
-        return self._db["depot_positions"].find_one({"position_id": position_id})
+    def get_latest_depot_snapshot(self, depot_id: str) -> dict | None:
+        """Return the most recently inserted snapshot for a depot."""
+        return self._db["depot_snapshots"].find_one(
+            {"depot_id": depot_id},
+            sort=[("recorded_at", DESCENDING)],
+        )
 
-    def upsert_position(
+    def insert_depot_snapshot(
         self,
-        position_id: str,
         depot_id: str,
-        wkn: str | None,
-        isin: str | None,
-        instrument_name: str | None,
-        quantity_value: Decimal | None,
-        quantity_unit: str | None,
-        current_value: Decimal | None,
-        current_value_unit: str | None,
-        purchase_price: Decimal | None,
-        purchase_price_unit: str | None,
-        quantity_changed: bool,
+        positions: list[dict],
     ) -> None:
         """
-        Upsert a depot position.
-        Appends to quantity_history only when quantity_changed is True.
-        Always updates current_value and last_updated.
+        Insert a new depot snapshot containing all current positions.
+
+        Each position dict should carry:
+          position_id, wkn, isin, instrument_name,
+          quantity  : {value: str, unit: str},
+          current_value : {value: str, unit: str},
+          purchase_price: {value: str, unit: str}
         """
         now = _now()
-        col: Collection = self._db["depot_positions"]
+        self._db["depot_snapshots"].insert_one({
+            "depot_id": depot_id,
+            "positions": positions,
+            "recorded_at": now,
+            "last_synced_at": now,
+        })
 
-        update: dict = {
-            "$set": {
-                "depot_id": depot_id,
-                "wkn": wkn,
-                "isin": isin,
-                "instrument_name": instrument_name,
-                "quantity": {
-                    "value": _decimal_to_str(quantity_value),
-                    "unit": quantity_unit,
-                },
-                "current_value": {
-                    "value": _decimal_to_str(current_value),
-                    "unit": current_value_unit,
-                },
-                "purchase_price": {
-                    "value": _decimal_to_str(purchase_price),
-                    "unit": purchase_price_unit,
-                },
-                "last_updated": now,
-            }
-        }
-
-        if quantity_changed:
-            update["$push"] = {
-                "quantity_history": {
-                    "quantity": _decimal_to_str(quantity_value),
-                    "unit": quantity_unit,
-                    "recorded_at": now,
-                }
-            }
-
-        col.update_one({"position_id": position_id}, update, upsert=True)
-
-    def get_position_ids_in_depot(self, depot_id: str) -> set[str]:
-        """Return all known position_ids for a depot (to detect closed positions)."""
-        docs = self._db["depot_positions"].find(
-            {"depot_id": depot_id}, {"position_id": 1}
+    def touch_depot_last_synced(self, depot_id: str) -> None:
+        """Update last_synced_at on the latest snapshot without inserting a new one."""
+        self._db["depot_snapshots"].update_one(
+            {"depot_id": depot_id},
+            {"$set": {"last_synced_at": _now()}},
+            sort=[("recorded_at", DESCENDING)],
         )
-        return {d["position_id"] for d in docs}
 
     # ------------------------------------------------------------------
     # transactions — insert-only, keyed by transaction_id

@@ -157,62 +157,108 @@ async def test_sync_balances_multiple_accounts():
 
 
 # ---------------------------------------------------------------------------
-# sync_depot_positions
+# sync_depot_positions (snapshot design)
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_sync_positions_new_position():
-    """New position (not in DB) — should upsert with quantity_changed=True."""
+async def test_sync_positions_no_snapshot_inserts():
+    """No existing snapshot — should insert a new one."""
     client = AsyncMock()
     repo = MagicMock()
 
     pos = _position("POS1", "A1B2C3", Decimal("1000"), Decimal("5000.00"))
     client.get_depot_positions.return_value = MagicMock(values=[pos])
-    repo.get_position.return_value = None  # not in DB yet
+    repo.get_latest_depot_snapshot.return_value = None
 
     service = SyncService(client, repo)
     result = await service.sync_depot_positions("DEPOT1")
 
-    repo.upsert_position.assert_called_once()
-    call_kwargs = repo.upsert_position.call_args.kwargs
-    assert call_kwargs["quantity_changed"] is True
-    assert result == {"upserted": 1}
+    repo.insert_depot_snapshot.assert_called_once()
+    repo.touch_depot_last_synced.assert_not_called()
+    assert result == {"inserted": 1, "touched": 0}
 
 
 @pytest.mark.asyncio
-async def test_sync_positions_same_quantity_no_history():
-    """Same quantity — current_value updated but quantity_changed=False."""
+async def test_sync_positions_unchanged_touches():
+    """Depot composition unchanged — should only touch last_synced_at."""
     client = AsyncMock()
     repo = MagicMock()
 
     pos = _position("POS1", "A1B2C3", Decimal("1000"), Decimal("6000.00"))
     client.get_depot_positions.return_value = MagicMock(values=[pos])
-    repo.get_position.return_value = {"quantity": {"value": "1000"}}
+    repo.get_latest_depot_snapshot.return_value = {
+        "positions": [{"position_id": "POS1", "quantity": {"value": "1000"}}]
+    }
 
     service = SyncService(client, repo)
     result = await service.sync_depot_positions("DEPOT1")
 
-    call_kwargs = repo.upsert_position.call_args.kwargs
-    assert call_kwargs["quantity_changed"] is False
-    assert result == {"upserted": 1}
+    repo.insert_depot_snapshot.assert_not_called()
+    repo.touch_depot_last_synced.assert_called_once_with("DEPOT1")
+    assert result == {"inserted": 0, "touched": 1}
 
 
 @pytest.mark.asyncio
-async def test_sync_positions_quantity_changed():
-    """Quantity changed (buy/sell) — quantity_changed=True."""
+async def test_sync_positions_quantity_changed_inserts():
+    """Quantity changed — should insert a new snapshot."""
     client = AsyncMock()
     repo = MagicMock()
 
     pos = _position("POS1", "A1B2C3", Decimal("2000"), Decimal("10000.00"))
     client.get_depot_positions.return_value = MagicMock(values=[pos])
-    repo.get_position.return_value = {"quantity": {"value": "1000"}}
+    repo.get_latest_depot_snapshot.return_value = {
+        "positions": [{"position_id": "POS1", "quantity": {"value": "1000"}}]
+    }
 
     service = SyncService(client, repo)
     result = await service.sync_depot_positions("DEPOT1")
 
-    call_kwargs = repo.upsert_position.call_args.kwargs
-    assert call_kwargs["quantity_changed"] is True
-    assert result == {"upserted": 1}
+    repo.insert_depot_snapshot.assert_called_once()
+    repo.touch_depot_last_synced.assert_not_called()
+    assert result == {"inserted": 1, "touched": 0}
+
+
+@pytest.mark.asyncio
+async def test_sync_positions_new_position_inserts():
+    """New position appeared — should insert a new snapshot."""
+    client = AsyncMock()
+    repo = MagicMock()
+
+    pos1 = _position("POS1", "A1B2C3", Decimal("1000"), Decimal("5000.00"))
+    pos2 = _position("POS2", "X9Y8Z7", Decimal("500"), Decimal("2000.00"))
+    client.get_depot_positions.return_value = MagicMock(values=[pos1, pos2])
+    repo.get_latest_depot_snapshot.return_value = {
+        "positions": [{"position_id": "POS1", "quantity": {"value": "1000"}}]
+    }
+
+    service = SyncService(client, repo)
+    result = await service.sync_depot_positions("DEPOT1")
+
+    repo.insert_depot_snapshot.assert_called_once()
+    assert result == {"inserted": 1, "touched": 0}
+
+
+@pytest.mark.asyncio
+async def test_sync_positions_sold_position_inserts():
+    """Position sold (gone from API response) — should insert a new snapshot."""
+    client = AsyncMock()
+    repo = MagicMock()
+
+    # API now returns only POS1; POS2 was previously in snapshot (fully sold)
+    pos1 = _position("POS1", "A1B2C3", Decimal("1000"), Decimal("5000.00"))
+    client.get_depot_positions.return_value = MagicMock(values=[pos1])
+    repo.get_latest_depot_snapshot.return_value = {
+        "positions": [
+            {"position_id": "POS1", "quantity": {"value": "1000"}},
+            {"position_id": "POS2", "quantity": {"value": "500"}},
+        ]
+    }
+
+    service = SyncService(client, repo)
+    result = await service.sync_depot_positions("DEPOT1")
+
+    repo.insert_depot_snapshot.assert_called_once()
+    assert result == {"inserted": 1, "touched": 0}
 
 
 # ---------------------------------------------------------------------------

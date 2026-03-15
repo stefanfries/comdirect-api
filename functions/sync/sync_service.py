@@ -13,13 +13,14 @@ class SyncService:
     Orchestrates fetching data from the Comdirect API and persisting it to Atlas.
 
     Sync rules:
-    - account_balances : insert a new snapshot when balance.value has changed
-      (recorded_at is immutable — marks when the value first appeared).
+    - account_balances  : insert a new snapshot when balance.value has changed.
       If unchanged, only last_synced_at is updated on the latest document.
       Full time series is retained for charting; last_synced_at acts as a heartbeat.
-    - depot_positions  : upsert; append to quantity_history only on quantity change
-      (buy/sell). current_value is always refreshed.
-    - transactions     : insert-only, idempotent (skipped if transaction_id exists).
+    - depot_snapshots   : insert a new snapshot of the ENTIRE depot when the
+      composition changes (quantity change on any position, new position, or a
+      position fully sold/closed). Otherwise only last_synced_at is updated.
+      Latest state = most recent document for that depot_id.
+    - transactions      : insert-only, idempotent (skipped if transaction_id exists).
     """
 
     def __init__(self, client: ComdirectClient, repo: MongoRepo) -> None:
@@ -62,57 +63,72 @@ class SyncService:
         return {"inserted": inserted, "touched": touched}
 
     async def sync_depot_positions(self, depot_id: str) -> dict:
-        """Upsert all positions for a depot. Track quantity changes."""
+        """
+        Snapshot the entire depot.
+
+        Insert a new snapshot document when the composition changes:
+          - any position's quantity is different from the latest snapshot
+          - a new position appears
+          - a position is gone (fully sold)
+        Otherwise only touch last_synced_at on the latest snapshot.
+        """
         positions = await self._client.get_depot_positions(
             depot_id=depot_id, with_attr="instrument"
         )
-        upserted = 0
 
+        # Build current state as {position_id: quantity_str}
+        current: dict[str, str] = {}
         for pos in positions.values:
-            position_id = pos.position_id
-            if not position_id:
+            if pos.position_id:
+                qty = pos.quantity.value if pos.quantity else None
+                current[pos.position_id] = str(qty) if qty is not None else "None"
+
+        # Compare against latest snapshot fingerprint
+        latest = self._repo.get_latest_depot_snapshot(depot_id)
+        if latest:
+            previous: dict[str, str] = {
+                p["position_id"]: p.get("quantity", {}).get("value", "None")
+                for p in latest.get("positions", [])
+            }
+            changed = current != previous
+        else:
+            changed = True  # no snapshot yet
+
+        if not changed:
+            self._repo.touch_depot_last_synced(depot_id)
+            logger.info("Depot %s unchanged — touched last_synced_at", depot_id)
+            return {"inserted": 0, "touched": 1}
+
+        # Build full position list for the new snapshot
+        snapshot_positions = []
+        for pos in positions.values:
+            if not pos.position_id:
                 continue
+            snapshot_positions.append({
+                "position_id": pos.position_id,
+                "wkn": pos.wkn,
+                "isin": pos.instrument.isin if pos.instrument else None,
+                "instrument_name": pos.instrument.name if pos.instrument else None,
+                "quantity": {
+                    "value": str(pos.quantity.value) if pos.quantity and pos.quantity.value is not None else None,
+                    "unit": pos.quantity.unit if pos.quantity else None,
+                },
+                "current_value": {
+                    "value": str(pos.current_value.value) if pos.current_value and pos.current_value.value is not None else None,
+                    "unit": pos.current_value.unit if pos.current_value else None,
+                },
+                "purchase_price": {
+                    "value": str(pos.purchase_price.value) if pos.purchase_price and pos.purchase_price.value is not None else None,
+                    "unit": pos.purchase_price.unit if pos.purchase_price else None,
+                },
+            })
 
-            new_qty = pos.quantity.value if pos.quantity else None
-            existing = self._repo.get_position(position_id)
-            old_qty = (
-                existing.get("quantity", {}).get("value") if existing else None
-            )
-            quantity_changed = existing is None or str(new_qty) != old_qty
-
-            instrument_name = pos.instrument.name if pos.instrument else None
-            isin = pos.instrument.isin if pos.instrument else None
-
-            self._repo.upsert_position(
-                position_id=position_id,
-                depot_id=depot_id,
-                wkn=pos.wkn,
-                isin=isin,
-                instrument_name=instrument_name,
-                quantity_value=new_qty,
-                quantity_unit=pos.quantity.unit if pos.quantity else None,
-                current_value=(
-                    pos.current_value.value if pos.current_value else None
-                ),
-                current_value_unit=(
-                    pos.current_value.unit if pos.current_value else None
-                ),
-                purchase_price=(
-                    pos.purchase_price.value if pos.purchase_price else None
-                ),
-                purchase_price_unit=(
-                    pos.purchase_price.unit if pos.purchase_price else None
-                ),
-                quantity_changed=quantity_changed,
-            )
-            upserted += 1
-            if quantity_changed:
-                logger.info(
-                    "Quantity change detected for position %s (%s): %s → %s",
-                    position_id, pos.wkn, old_qty, new_qty,
-                )
-
-        return {"upserted": upserted}
+        self._repo.insert_depot_snapshot(depot_id=depot_id, positions=snapshot_positions)
+        logger.info(
+            "Depot %s snapshot inserted — %d positions",
+            depot_id, len(snapshot_positions),
+        )
+        return {"inserted": 1, "touched": 0}
 
     async def sync_depot_transactions(
         self, depot_id: str, min_booking_date: str = "-90d"
@@ -171,9 +187,9 @@ class SyncService:
                 "transactions": transactions_result,
             })
             logger.info(
-                "Depot %s synced: %s positions, %s new transactions",
+                "Depot %s synced: positions %s, %s new transactions",
                 depot_id,
-                positions_result["upserted"],
+                positions_result,
                 transactions_result["inserted"],
             )
 
