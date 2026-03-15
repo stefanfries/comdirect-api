@@ -494,29 +494,33 @@ _repo = MongoRepo(
 - `last_synced_at` acts as a **heartbeat** — updated on every sync, even when balance is unchanged.
 - Full history is retained for charting.
 
-#### `depot_positions` — Upsert with quantity history
+#### `depot_snapshots` — Insert-only; one document = entire depot state
 
 ```json
 {
-  "position_id": "12345",
   "depot_id": "67890",
-  "wkn": "A1C34X",
-  "isin": "DE000A1C34X7",
-  "quantity": { "value": "50", "unit": "XXC" },
-  "current_value": { "value": "4321.00", "unit": "EUR" },
-  "purchase_price": { "value": "80.00", "unit": "EUR" },
-  "current_price": { "value": "86.42", "unit": "EUR" },
-  "instrument_name": "Acme Corp",
-  "quantity_history": [
-    { "quantity": "40", "recorded_at": "<datetime>" },
-    { "quantity": "50", "recorded_at": "<datetime>" }
+  "positions": [
+    {
+      "position_id": "12345",
+      "wkn": "A1C34X",
+      "isin": "DE000A1C34X7",
+      "instrument_name": "Acme Corp",
+      "quantity": { "value": "50", "unit": "XXC" },
+      "current_price": { "value": "86.42", "unit": "EUR", "price_datetime": "2026-03-15T21:58:00" },
+      "current_value": { "value": "4321.00", "unit": "EUR" },
+      "purchase_price": { "value": "80.00", "unit": "EUR" }
+    }
   ],
-  "last_synced_at": "<UTC datetime>"
+  "recorded_at": "<UTC datetime — immutable, when this composition first appeared>",
+  "last_synced_at": "<UTC datetime — updated every sync run>"
 }
 ```
 
-- `quantity_history` append is triggered **only on quantity change** (buy/sell event).
-- `current_value` and `current_price` are refreshed on every sync.
+- One document captures **all positions** of the depot at a point in time.
+- A **new snapshot is inserted** when the composition changes: any quantity change, new position, or a position fully sold/closed.
+- When composition is unchanged, only `last_synced_at` is touched (heartbeat).
+- Latest depot state = `find_one({"depot_id": ...}, sort=[("recorded_at", -1)])`.
+- `current_price` is the market price **per unit** with its timestamp; `current_value` is the total position value (qty × price).
 
 #### `transactions` — Insert-only, idempotent
 
@@ -550,7 +554,7 @@ _repo = MongoRepo(
 | Collection | On new data | When unchanged |
 | ---------- | ----------- | -------------- |
 | `account_balances` | Insert new snapshot | Touch `last_synced_at` only |
-| `depot_positions` | Upsert; append `quantity_history` if qty changed | Upsert; no history append |
+| `depot_snapshots` | Insert new full-depot snapshot | Touch `last_synced_at` only |
 | `transactions` | Insert | Skip (idempotent) |
 
 ### Installing Sync Dependencies
@@ -718,16 +722,18 @@ git push
 ### Current Version (March 2026)
 
 - **Sync Function**: Azure HTTP-triggered sync function (`functions/sync/`) writing Comdirect data to MongoDB Atlas
-  - `MongoRepo` with insert-only balance snapshots, upsert depot positions, idempotent transaction inserts
+  - `MongoRepo` with insert-only balance snapshots, insert-only depot snapshots, idempotent transaction inserts
   - `SyncService` orchestration (testable independently of Azure runtime)
   - Module-level `MongoRepo` singleton for connection pool reuse across warm invocations
   - `last_synced_at` heartbeat timestamp alongside immutable `recorded_at`
   - `_date_to_datetime()` helper for native MongoDB date storage
+- **`depot_snapshots` collection**: Replaced per-position upsert design with insert-only whole-depot snapshots. Detects composition changes via `{position_id → quantity}` fingerprint comparison. Handles new positions, quantity changes, and sold/closed positions correctly.
+- **`current_price` in snapshots**: Each position in a snapshot stores `current_price` (per-unit market price + timestamp) alongside `current_value` (total position value).
 - **`AmountValue` model**: Replaced all `dict | None # AmountValue` placeholders with `AmountValue(ComdirectBaseModel)` carrying `value: Decimal | None` and `unit: str | None`. Exported from `models/__init__.py`
 - **`Price` de-duplicated**: Removed duplicate `Price` class from `depots.py`; single definition lives in `instruments.py`
-- **`ClientSettings`**: Renamed `Settings` → `ClientSettings` in `src/comdirect_api/settings.py` to support the settings inheritance hierarchy
+- **`ClientSettings`**: Renamed `Settings` → `ClientSettings` in `src/comdirect_api/settings.py` to support the settings inheritance hierarchy. Added `extra="ignore"` to tolerate MongoDB fields in shared `.env`.
 - **`SyncSettings`**: New `functions/sync/settings.py` extending `ClientSettings` with MongoDB credentials
-- **99 tests**: 85 client tests + 14 sync function tests (all passing)
+- **101 tests**: 85 client tests + 16 sync function tests (all passing)
 
 ### Previous Version (February 2026)
 

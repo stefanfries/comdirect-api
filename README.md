@@ -4,7 +4,7 @@
 ![Python Version](https://img.shields.io/badge/python-3.11%2B-blue)
 ![Code Style](https://img.shields.io/badge/code%20style-ruff-black)
 ![Type Checked](https://img.shields.io/badge/type%20checked-pydantic-green)
-![Tests](https://img.shields.io/badge/tests-99%20passed-success)
+![Tests](https://img.shields.io/badge/tests-101%20passed-success)
 ![Coverage](https://img.shields.io/badge/coverage-80%25-green)
 
 A modern, fully asynchronous Python client for the [Comdirect REST API](https://www.comdirect.de). Access your banking and brokerage accounts programmatically with full OAuth2 authentication and 2FA support.
@@ -150,7 +150,7 @@ curl -X POST https://<function-app>.azurewebsites.net/api/sync \
 The sync function:
 
 - **Snapshots account balances** — inserts a new document on value change; updates `last_synced_at` heartbeat otherwise
-- **Upserts depot positions** — refreshes current value; appends to `quantity_history` only on buy/sell
+- **Snapshots the entire depot** — inserts a new document (all positions) when composition changes (qty change, new position, sold position); updates `last_synced_at` heartbeat otherwise. Each position includes `current_price` (per-unit), `current_value` (total), and `purchase_price`.
 - **Inserts depot transactions** — idempotent (skipped if already stored)
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#sync-function-architecture) for the full schema and design.
@@ -224,7 +224,7 @@ uv run ruff check . --fix            # Auto-fix issues
 
 ### Quality Standards
 
-- **Tests**: 99 passing tests (85 client + 14 sync function)
+- **Tests**: 101 passing tests (85 client + 16 sync function)
 - **Coverage**: 80% code coverage
 - **Linting**: Zero errors, zero warnings
 - **Type Safety**: Full Pydantic V2 validation
