@@ -33,6 +33,10 @@ dev = [
     "pytest-asyncio>=1.0.0",
     "pytest-cov>=6.0.0",
 ]
+sync = [
+    "azure-functions>=1.21.0",
+    "pymongo>=4.10.0",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -43,6 +47,7 @@ packages = ["src/comdirect_api"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["src"]
 python_files = ["test_*.py"]
 python_classes = ["Test*"]
 python_functions = ["test_*"]

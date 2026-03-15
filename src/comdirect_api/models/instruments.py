@@ -3,15 +3,13 @@
 from datetime import date
 from decimal import Decimal
 
-from pydantic import Field
-
-from .base import ComdirectBaseModel
+from .base import AmountValue, ComdirectBaseModel
 
 
 class Price(ComdirectBaseModel):
     """Price model."""
 
-    price: dict | None = None  # AmountValue
+    price: AmountValue | None = None
     price_datetime: str | None = None
 
 
@@ -30,11 +28,11 @@ class DerivativeData(ComdirectBaseModel):
     underlying_price: Price | None = None
     certificate_type: str | None = None
     rating: dict | None = None
-    strike_price: dict | None = None  # AmountValue
+    strike_price: AmountValue | None = None
     leverage: Decimal | None = None
     multiplier: Decimal | None = None
     expiry_date: date | None = None
-    yield_pa: Decimal | None = Field(default=None, alias="yieldPA")
+    yield_pa: Decimal | None = None
     remaining_term_in_years: Decimal | None = None
     nominal_rate: Decimal | None = None
     warrant_type: str | None = None  # Call, Put

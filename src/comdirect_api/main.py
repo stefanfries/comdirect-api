@@ -61,8 +61,8 @@ async def main():
                 print(f"Number of transactions: {len(transactions.values)}")
                 for txn in transactions.values[:5]:
                     date_str = txn.booking_date if txn.booking_date else "N/A"
-                    amount_val = txn.amount.get("value") if txn.amount else "N/A"
-                    amount_unit = txn.amount.get("unit") if txn.amount else ""
+                    amount_val = txn.amount.value if txn.amount else "N/A"
+                    amount_unit = txn.amount.unit if txn.amount else ""
                     info = format_remittance_info(txn.remittance_info)
                     print(f"  - {date_str}: {amount_val} {amount_unit} - {info}")
             except Exception as e:
@@ -92,10 +92,10 @@ async def main():
                 for pos in positions.values[:10]:
                     wkn = pos.wkn or "N/A"
                     instrument_name = pos.instrument.name if pos.instrument else "N/A"
-                    quantity_val = pos.quantity.get("value") if pos.quantity else "N/A"
-                    quantity_unit = pos.quantity.get("unit") if pos.quantity else ""
-                    current_value = pos.current_value.get("value") if pos.current_value else "N/A"
-                    current_unit = pos.current_value.get("unit") if pos.current_value else ""
+                    quantity_val = pos.quantity.value if pos.quantity else "N/A"
+                    quantity_unit = pos.quantity.unit if pos.quantity else ""
+                    current_value = pos.current_value.value if pos.current_value else "N/A"
+                    current_unit = pos.current_value.unit if pos.current_value else ""
                     print(
                         f"  - {wkn}: {instrument_name} - "
                         f"Qty: {quantity_val} {quantity_unit} - "
@@ -113,8 +113,8 @@ async def main():
                 for txn in depot_txns.values[:5]:
                     date_str = txn.booking_date if txn.booking_date else "N/A"
                     txn_type = txn.transaction_type or "N/A"
-                    qty_val = txn.quantity.get("value") if txn.quantity else "N/A"
-                    price_val = txn.execution_price.get("value") if txn.execution_price else "N/A"
+                    qty_val = txn.quantity.value if txn.quantity else "N/A"
+                    price_val = txn.execution_price.value if txn.execution_price else "N/A"
                     print(f"  - {date_str}: {txn_type} - {qty_val} @ {price_val}")
             except Exception as e:
                 print(f"No depot transactions found: {e}")
@@ -162,8 +162,8 @@ async def main():
         all_balances = await client.get_all_balances()
         print(f"Total products: {all_balances.paging.matches}")
         if all_balances.aggregated and all_balances.aggregated.balance_eur:
-            agg_val = all_balances.aggregated.balance_eur.get("value")
-            agg_unit = all_balances.aggregated.balance_eur.get("unit", "EUR")
+            agg_val = all_balances.aggregated.balance_eur.value
+            agg_unit = all_balances.aggregated.balance_eur.unit or "EUR"
             print(f"Aggregated balance: {agg_val} {agg_unit}")
         for pb in all_balances.values:
             print(f"  - {pb.product_type}: {pb.product_id}")
@@ -204,9 +204,9 @@ async def main():
     for depot in account_depots.values:
         positions = await client.get_depot_positions(depot_id=depot.depot_id)
         depot_total = sum(
-            Decimal(str(pos.current_value["value"]))
+            Decimal(str(pos.current_value.value))
             for pos in positions.values
-            if pos.current_value and pos.current_value.get("value") is not None
+            if pos.current_value and pos.current_value.value is not None
         )
         total += depot_total
         table_rows.append(("Depot", depot.depot_display_id, depot_total))

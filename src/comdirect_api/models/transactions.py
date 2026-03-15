@@ -2,7 +2,7 @@
 
 from datetime import date, datetime
 
-from .base import ComdirectBaseModel
+from .base import AmountValue, ComdirectBaseModel
 
 
 class AccountInformation(ComdirectBaseModel):
@@ -26,7 +26,7 @@ class AccountTransaction(ComdirectBaseModel):
     reference: str | None = None
     booking_status: str | None = None  # BOOKED, NOTBOOKED
     booking_date: date | None = None
-    amount: dict | None = None  # AmountValue
+    amount: AmountValue | None = None
     remitter: AccountInformation | None = None
     deptor: AccountInformation | None = None
     creditor: AccountInformation | None = None
@@ -55,11 +55,11 @@ class DepotTransaction(ComdirectBaseModel):
     booking_date: date | None = None
     settlement_date: datetime | None = None
     business_date: date | None = None
-    quantity: dict | None = None  # AmountValue
+    quantity: AmountValue | None = None
     instrument_id: str | None = None
     instrument: dict | None = None  # Instrument (optional)
-    execution_price: dict | None = None  # AmountValue
-    transaction_value: dict | None = None  # AmountValue
+    execution_price: AmountValue | None = None
+    transaction_value: AmountValue | None = None
     transaction_direction: str | None = None  # IN, OUT
     transaction_type: str | None = None  # BUY, SELL, TRANSFER_IN, TRANSFER_OUT, OTHER
     fx_rate: dict | None = None  # FXRateEUR

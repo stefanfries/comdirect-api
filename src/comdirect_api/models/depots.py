@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from .base import ComdirectBaseModel
-from .instruments import Instrument
+from .base import AmountValue, ComdirectBaseModel
+from .instruments import Instrument, Price
 
 
 class Paging(ComdirectBaseModel):
@@ -47,13 +47,6 @@ class AccountDepots(ComdirectBaseModel):
     values: list[Depot]
 
 
-class Price(ComdirectBaseModel):
-    """Price information."""
-
-    price: dict | None = None  # AmountValue
-    price_datetime: str | None = None
-
-
 class DepotPosition(ComdirectBaseModel):
     """Securities position in a depot."""
 
@@ -61,17 +54,17 @@ class DepotPosition(ComdirectBaseModel):
     position_id: str | None = None
     wkn: str | None = None
     custody_type: str | None = None
-    quantity: dict | None = None  # AmountValue
-    available_quantity: dict | None = None  # AmountValue
+    quantity: AmountValue | None = None
+    available_quantity: AmountValue | None = None
     current_price: Price | None = None
-    purchase_price: dict | None = None  # AmountValue
+    purchase_price: AmountValue | None = None
     prev_day_price: Price | None = None
-    current_value: dict | None = None  # AmountValue
-    purchase_value: dict | None = None  # AmountValue
-    prev_day_value: dict | None = None  # AmountValue
-    profit_loss_purchase_abs: dict | None = None  # AmountValue
+    current_value: AmountValue | None = None
+    purchase_value: AmountValue | None = None
+    prev_day_value: AmountValue | None = None
+    profit_loss_purchase_abs: AmountValue | None = None
     profit_loss_purchase_rel: Decimal | None = None  # PercentageString
-    profit_loss_prev_day_abs: dict | None = None  # AmountValue
+    profit_loss_prev_day_abs: AmountValue | None = None
     profit_loss_prev_day_rel: Decimal | None = None  # PercentageString
     instrument: Instrument | None = None
     version: str | None = None

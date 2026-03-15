@@ -1,6 +1,7 @@
 """Base models and utilities for Comdirect API models."""
 
 import re
+from decimal import Decimal
 
 from pydantic import BaseModel, ConfigDict
 
@@ -28,3 +29,10 @@ class ComdirectBaseModel(BaseModel):
         alias_generator=to_camel,
         populate_by_name=True,
     )
+
+
+class AmountValue(ComdirectBaseModel):
+    """Monetary amount with currency unit, as returned by the Comdirect API."""
+
+    value: Decimal | None = None
+    unit: str | None = None

@@ -4,7 +4,7 @@
 ![Python Version](https://img.shields.io/badge/python-3.11%2B-blue)
 ![Code Style](https://img.shields.io/badge/code%20style-ruff-black)
 ![Type Checked](https://img.shields.io/badge/type%20checked-pydantic-green)
-![Tests](https://img.shields.io/badge/tests-85%20passed-success)
+![Tests](https://img.shields.io/badge/tests-99%20passed-success)
 ![Coverage](https://img.shields.io/badge/coverage-80%25-green)
 
 A modern, fully asynchronous Python client for the [Comdirect REST API](https://www.comdirect.de). Access your banking and brokerage accounts programmatically with full OAuth2 authentication and 2FA support.
@@ -18,8 +18,9 @@ A modern, fully asynchronous Python client for the [Comdirect REST API](https://
 - 📊 **Comprehensive API Coverage** - Banking, brokerage, depot positions, transactions, instruments, documents
 - 🔒 **Type-Safe** - Pydantic V2 models for all API responses with automatic camelCase conversion
 - 🐍 **Pythonic** - Clean snake_case interface with automatic camelCase for API calls
-- 🧪 **Well Tested** - 85 tests with 80% code coverage
+- 🧪 **Well Tested** - 99 tests with 80% code coverage
 - 📦 **Modern Stack** - Python 3.11+, httpx, Pydantic V2, async/await
+- ☁️ **Azure Function Sync** - Scheduled HTTP-triggered Azure Function that syncs Comdirect data to MongoDB Atlas
 
 ## 🚀 Tech Stack
 
@@ -31,6 +32,8 @@ A modern, fully asynchronous Python client for the [Comdirect REST API](https://
 | Package Manager | `uv` |
 | Testing | `pytest` + `pytest-asyncio` |
 | Code Quality | `ruff` |
+| Sync Storage | MongoDB Atlas via `pymongo` |
+| Sync Runtime | Azure Functions v2 (Python) |
 
 ## 📦 Installation
 
@@ -39,19 +42,27 @@ A modern, fully asynchronous Python client for the [Comdirect REST API](https://
 git clone https://github.com/stefanfries/comdirect-api.git
 cd comdirect-api
 
-# Install with uv (recommended)
+# Install core dependencies with uv (recommended)
 uv sync
+
+# Install sync function dependencies (Azure Functions + pymongo)
+uv sync --extra sync
 ```
 
 ## 🔧 Configuration
 
-Create a `.env` file in the project root:
+Create a `.env` file in the project root (copy from `.env.example`):
 
 ```env
+# Comdirect credentials (required for all usage)
 CLIENT_ID=your_client_id
 CLIENT_SECRET=your_client_secret
 ZUGANGSNUMMER=your_account_number
 PIN=your_pin
+
+# MongoDB Atlas (required only for the sync function)
+MONGODB_CONNECTION_STRING=mongodb+srv://...
+MONGODB_DATABASE=finance
 ```
 
 > **Important**: Never commit your `.env` file to version control!
@@ -84,7 +95,7 @@ async def main():
     for depot in depots.values:
         positions = await client.get_depot_positions(depot.depot_id)
         for position in positions.values:
-            print(f"{position.wkn}: {position.current_value}")
+            print(f"{position.wkn}: {position.current_value.value} {position.current_value.unit}")
 
 if __name__ == "__main__":
     asyncio.run(main())
@@ -108,7 +119,7 @@ async def main():
     # Client is already authenticated and ready!
     balances = await client.get_account_balances()
     for balance in balances.values:
-        print(f"{balance.account_id}: {balance.balance.value}")
+        print(f"{balance.account_id}: {balance.balance.value} {balance.balance.unit}")
 
 if __name__ == "__main__":
     asyncio.run(main())
@@ -126,6 +137,23 @@ The factory method ``ComdirectClient.create()`` handles the complete authenticat
 **Result**: A fully authenticated client ready for API calls in one line!
 
 > **Note**: You'll need to approve the push TAN notification on your phone during initialization.
+
+### Sync Function (Azure)
+
+The `functions/sync/` directory contains an Azure HTTP-triggered Function that syncs Comdirect data to MongoDB Atlas. Trigger it via `POST /api/sync` (requires Azure Function key):
+
+```bash
+curl -X POST https://<function-app>.azurewebsites.net/api/sync \
+  -H "x-functions-key: <your-function-key>"
+```
+
+The sync function:
+
+- **Snapshots account balances** — inserts a new document on value change; updates `last_synced_at` heartbeat otherwise
+- **Upserts depot positions** — refreshes current value; appends to `quantity_history` only on buy/sell
+- **Inserts depot transactions** — idempotent (skipped if already stored)
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#sync-function-architecture) for the full schema and design.
 
 ## 📚 API Coverage
 
@@ -178,11 +206,13 @@ The factory method ``ComdirectClient.create()`` handles the complete authenticat
 # Clone and install
 git clone https://github.com/stefanfries/comdirect-api.git
 cd comdirect-api
-uv sync
+uv sync                              # Core dependencies
+uv sync --extra sync                 # Add sync function deps (pymongo, azure-functions)
 
 # Run tests
 uv run pytest tests/ -v              # Verbose output
 uv run pytest tests/ -q              # Quick summary
+uv run pytest tests/test_sync_service.py -v  # Sync function tests only
 
 # Run tests with coverage
 uv run pytest --cov=src/comdirect_api tests/
@@ -194,7 +224,7 @@ uv run ruff check . --fix            # Auto-fix issues
 
 ### Quality Standards
 
-- **Tests**: 85 passing tests
+- **Tests**: 99 passing tests (85 client + 14 sync function)
 - **Coverage**: 80% code coverage
 - **Linting**: Zero errors, zero warnings
 - **Type Safety**: Full Pydantic V2 validation
@@ -208,27 +238,40 @@ comdirect_api/
 ├── src/
 │   └── comdirect_api/          # Main package
 │       ├── __init__.py         # Package initialization
-│       ├── client.py           # Main API client class (1073 lines)
+│       ├── client.py           # Main API client class
 │       ├── main.py             # Example usage script
-│       ├── settings.py         # Environment configuration
+│       ├── settings.py         # ClientSettings (pydantic-settings)
 │       ├── utils.py            # Utility functions (timestamp)
 │       └── models/             # Pydantic V2 data models
-│           ├── __init__.py     # Public API exports (10 models)
-│           ├── base.py         # ComdirectBaseModel + utilities
+│           ├── __init__.py     # Public API exports (11 symbols)
+│           ├── base.py         # ComdirectBaseModel + AmountValue
 │           ├── accounts.py     # Account & balance models
 │           ├── auth.py         # Authentication models (internal)
 │           ├── depots.py       # Depot & position models
-│           ├── instruments.py  # Instrument data models
+│           ├── instruments.py  # Instrument data models + Price
 │           ├── messages.py     # Documents & messages models
 │           ├── reports.py      # Reports & aggregated balance models
 │           └── transactions.py # Transaction models
-├── tests/                      # Test suite (85 tests, 80% coverage)
+├── functions/
+│   └── sync/                   # Azure HTTP-triggered sync function
+│       ├── function_app.py     # Azure Function entry point
+│       ├── sync_service.py     # Orchestration logic (testable)
+│       ├── mongo_repo.py       # MongoDB Atlas read/write
+│       └── settings.py         # SyncSettings (extends ClientSettings)
+├── tests/                      # Test suite (99 tests, 80% coverage)
 │   ├── conftest.py             # Shared test fixtures
 │   ├── test_auth.py            # Authentication tests
 │   ├── test_banking.py         # Banking operations tests
 │   ├── test_brokerage.py       # Brokerage operations tests
+│   ├── test_client.py          # Client functionality tests
+│   ├── test_factory.py         # Factory pattern tests
 │   ├── test_messages.py        # Messages API tests
-│   └── ...
+│   ├── test_reports.py         # Reports tests
+│   ├── test_sync_service.py    # Sync function tests
+│   ├── test_tan_flow.py        # TAN workflow tests
+│   ├── test_tan_polling.py     # TAN polling tests
+│   ├── test_utils.py           # Utility function tests
+│   └── test_validation_errors.py # Validation tests
 ├── docs/                       # Documentation
 │   ├── ARCHITECTURE.md         # Architecture & development guidelines ⭐
 │   ├── swagger.json            # Comdirect API specification
@@ -236,6 +279,7 @@ comdirect_api/
 │   └── comdirect_REST_API_Dokumentation.pdf
 ├── examples/                   # Example scripts
 │   └── logging_config.py       # Logging configuration example
+├── .env.example                # Environment variable template
 ├── LICENSE                     # MIT License
 ├── README.md                   # This file
 ├── pyproject.toml              # Project configuration & dependencies

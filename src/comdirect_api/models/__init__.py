@@ -2,6 +2,7 @@
 
 # Only expose top-level response models that are returned by public client methods
 from .accounts import AccountBalance, AccountBalances
+from .base import AmountValue
 from .depots import AccountDepots, DepotPosition, DepotPositions
 from .instruments import Instruments
 from .messages import Documents
@@ -9,6 +10,8 @@ from .reports import AllBalances
 from .transactions import AccountTransactions, DepotTransactions
 
 __all__ = [
+    # Shared value type used in response fields
+    "AmountValue",          # monetary / quantity value with unit
     # Main response models returned by client methods
     "AccountBalance",       # from get_account_balance()
     "AccountBalances",      # from get_account_balances()

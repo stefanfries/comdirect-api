@@ -109,7 +109,7 @@ async def test_get_depot_positions_success(client_instance):
         assert result.paging["matches"] == 2
         assert len(result.values) == 2
         assert result.values[0].wkn == "A1B2C3"
-        assert result.values[0].current_value["value"] == Decimal("5000.00")
+        assert result.values[0].current_value.value == Decimal("5000.00")
 
 
 @pytest.mark.asyncio
@@ -181,7 +181,7 @@ async def test_get_depot_position_success(client_instance):
 
         assert result.position_id == "pos_123"
         assert result.wkn == "A1B2C3"
-        assert result.current_value["value"] == Decimal("5000.00")
+        assert result.current_value.value == Decimal("5000.00")
 
 
 @pytest.mark.asyncio
@@ -228,8 +228,8 @@ async def test_get_depot_transactions_success(client_instance):
 
         assert result.paging["matches"] == 2
         assert len(result.values) == 2
-        assert result.values[0].quantity["value"] == 100.0
-        assert result.values[0].execution_price["value"] == Decimal("50.00")
+        assert result.values[0].quantity.value == Decimal("100.0")
+        assert result.values[0].execution_price.value == Decimal("50.00")
 
 
 @pytest.mark.asyncio

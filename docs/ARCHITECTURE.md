@@ -13,20 +13,27 @@ comdirect_api/
 ├── src/
 │   └── comdirect_api/          # Main package
 │       ├── __init__.py         # Package initialization
-│       ├── client.py           # Main API client class (978 lines)
+│       ├── client.py           # Main API client class
 │       ├── main.py             # Example usage script
-│       ├── settings.py         # Environment configuration
+│       ├── settings.py         # Environment configuration (ClientSettings)
 │       ├── utils.py            # Utility functions (timestamp)
 │       └── models/             # Pydantic V2 data models
 │           ├── __init__.py     # Public API exports
-│           ├── base.py         # ComdirectBaseModel + utilities
+│           ├── base.py         # ComdirectBaseModel + AmountValue
 │           ├── accounts.py     # Account & balance models
 │           ├── auth.py         # Authentication models (internal)
 │           ├── depots.py       # Depot & position models
-│           ├── instruments.py  # Instrument data models
+│           ├── instruments.py  # Instrument data models + Price
 │           ├── messages.py     # Documents & messages models
+│           ├── reports.py      # Aggregated balance models
 │           └── transactions.py # Transaction models
-├── tests/                      # Test suite (85 tests, 83% coverage)
+├── functions/
+│   └── sync/                   # Azure HTTP-triggered sync function
+│       ├── function_app.py     # Azure Function entry point
+│       ├── sync_service.py     # Sync orchestration (testable)
+│       ├── mongo_repo.py       # MongoDB Atlas read/write
+│       └── settings.py         # SyncSettings (extends ClientSettings)
+├── tests/                      # Test suite (99 tests, 80% coverage)
 │   ├── __init__.py
 │   ├── conftest.py             # Shared test fixtures
 │   ├── test_auth.py            # Authentication tests
@@ -35,7 +42,8 @@ comdirect_api/
 │   ├── test_client.py          # Client functionality tests
 │   ├── test_factory.py         # Factory pattern tests
 │   ├── test_messages.py        # Messages API tests
-│   ├── test_reports.py         # Reports tests (placeholder)
+│   ├── test_reports.py         # Reports tests
+│   ├── test_sync_service.py    # Sync function tests
 │   ├── test_tan_flow.py        # TAN workflow tests
 │   ├── test_tan_polling.py     # TAN polling tests
 │   ├── test_utils.py           # Utility function tests
@@ -43,10 +51,10 @@ comdirect_api/
 ├── docs/                       # Documentation
 │   ├── ARCHITECTURE.md         # This file
 │   ├── swagger.json            # Comdirect API specification
-│   ├── comdirect_REST_API_Dokumentation.md
-│   └── comdirect_REST_API_Dokumentation.pdf
+│   └── comdirect_REST_API_Dokumentation.md
 ├── examples/                   # Example scripts
 │   └── logging_config.py       # Logging configuration example
+├── .env.example                # Environment variable template
 ├── LICENSE                     # MIT License
 ├── README.md                   # Project documentation
 ├── pyproject.toml              # Project configuration & dependencies
@@ -129,11 +137,11 @@ Models are organized by domain in separate files:
 
 | File | Purpose | Key Models |
 | ---- | ------- | ---------- |
-| `base.py` | Base class and utilities | `ComdirectBaseModel`, `to_camel()` |
+| `base.py` | Base class, utilities, shared value types | `ComdirectBaseModel`, `AmountValue`, `to_camel()` |
 | `accounts.py` | Account and balance data | `AccountBalances`, `AccountBalance`, `Balance` |
 | `auth.py` | Authentication responses | `AuthResponse`, `TokenState` (internal) |
 | `depots.py` | Depot and position data | `AccountDepots`, `DepotPositions`, `DepotPosition` |
-| `instruments.py` | Instrument/security data | `Instruments`, `Instrument`, `StaticData` |
+| `instruments.py` | Instrument/security data | `Instruments`, `Instrument`, `StaticData`, `Price` |
 | `messages.py` | Documents and messages | `Documents`, `Document`, `DocumentMetadata` |
 | `reports.py` | Reports / all-product balances | `AllBalances`, `ProductBalance`, `BalanceAggregation` |
 | `transactions.py` | Transaction data | `AccountTransactions`, `DepotTransactions` |
@@ -144,6 +152,9 @@ Only **top-level response models** are exposed in `models/__init__.py`:
 
 ```python
 __all__ = [
+    # Shared value type used in response fields
+    "AmountValue",          # monetary / quantity value with unit
+    # Main response models returned by client methods
     "AccountBalance",       # from get_account_balance()
     "AccountBalances",      # from get_account_balances()
     "AccountTransactions",  # from get_account_transactions()
@@ -157,7 +168,7 @@ __all__ = [
 ]
 ```
 
-**Design Principle**: Internal models (e.g., `Account`, `Balance`, `AuthResponse`) are not exposed. Users access nested data via properties of response objects.
+**Design Principle**: Internal models (e.g., `Account`, `Balance`, `AuthResponse`) are not exposed. Users access nested data via properties of response objects. `AmountValue` is an exception — it is exported because users regularly need to type-hint or inspect monetary and quantity fields.
 
 Example:
 
@@ -172,8 +183,12 @@ for balance in balances.values:
 ### Financial Data Types
 
 - **Decimal for Money**: All financial amounts use `Decimal` (never `float`)
-- **ISO4217 Currency Codes**: Currency validation using standard codes
-- **Proper Precision**: Maintains exact decimal precision for financial calculations
+- **`AmountValue` model**: Monetary and quantity fields use `AmountValue` (defined in `base.py`) instead of raw `dict`. It has two attributes:
+  - `value: Decimal | None` — the numeric amount
+  - `unit: str | None` — ISO 4217 currency code (e.g. `EUR`) or a Comdirect quantity code (`XXX`, `XXC`, `XXP`, `XXU`)
+- **`Price` model**: Defined in `instruments.py` and shared with `depots.py`. Wraps an `AmountValue` plus a `price_datetime` timestamp.
+- **ISO4217 Currency Codes**: Standard currency codes used in `AmountValue.unit` for monetary fields; quantity fields use Comdirect-specific non-currency codes.
+- **Proper Precision**: Maintains exact decimal precision for financial calculations.
 
 ## HTTP Request Pattern
 
@@ -341,23 +356,32 @@ PIN=your_pin
 
 #### Settings Management
 
-Settings are managed via Pydantic Settings in `settings.py`:
+Settings are managed via Pydantic Settings in a two-level hierarchy:
 
 ```python
-class Settings(BaseSettings):
+# src/comdirect_api/settings.py
+class ClientSettings(BaseSettings):
     client_id: str
     client_secret: str
     zugangsnummer: str
     pin: str
-    
+
     model_config = SettingsConfigDict(env_file=".env")
+
+
+# functions/sync/settings.py
+class SyncSettings(ClientSettings):
+    mongodb_connection_string: SecretStr
+    mongodb_database: str = "finance"
 ```
+
+Each module exposes a module-level `settings` instance. The sync function's `SyncSettings` inherits all Comdirect credentials from `ClientSettings` and adds MongoDB-specific fields.
 
 **Never commit** `.env` files or credentials to version control.
 
 ## API Coverage Strategy
 
-### Current Coverage (11/30 endpoints - 37%)
+### Current Coverage (11/30 endpoints — 37%)
 
 #### Implemented Endpoints
 
@@ -425,6 +449,125 @@ When adding new API endpoints:
 4. **Add Tests** in corresponding `tests/test_*.py` file
 5. **Update Public API** in `models/__init__.py` if exposing new top-level model
 6. **Document** in README.md API coverage section
+
+## Sync Function Architecture
+
+The `functions/sync/` package is an Azure HTTP-triggered Function that syncs Comdirect data to MongoDB Atlas. It is designed to be triggered on a schedule (e.g., daily) or on demand.
+
+### Component Overview
+
+| File | Responsibility |
+| ---- | -------------- |
+| `function_app.py` | Azure Function entry point; creates a per-request `ComdirectClient`; holds module-level `MongoRepo` singleton |
+| `sync_service.py` | Orchestration logic; fully testable; depends on `ComdirectClient` and `MongoRepo` abstractions |
+| `mongo_repo.py` | All MongoDB Atlas reads and writes; no Comdirect knowledge |
+| `settings.py` | `SyncSettings(ClientSettings)` — adds `mongodb_connection_string` and `mongodb_database` |
+
+### Module-Level Singleton (Connection Pool)
+
+```python
+# function_app.py — created once per cold start, reused across warm invocations
+_repo = MongoRepo(
+    connection_string=settings.mongodb_connection_string.get_secret_value(),
+    database=settings.mongodb_database,
+)
+```
+
+`PyMongoClient` manages an internal connection pool; creating it per request would be wasteful. The singleton follows MongoDB's own guidance for serverless runtimes.
+
+### MongoDB Collections
+
+#### `account_balances` — Insert-only time series
+
+```json
+{
+  "account_id": "DE89370400440532013000",
+  "iban": "DE89370400440532013000",
+  "account_type": "Girokonto",
+  "balance": { "value": "1234.56", "unit": "EUR" },
+  "recorded_at": "<UTC datetime — immutable, when value first appeared>",
+  "last_synced_at": "<UTC datetime — updated every sync run>"
+}
+```
+
+- `recorded_at` is **immutable** — it marks the first time this exact balance was observed.
+- `last_synced_at` acts as a **heartbeat** — updated on every sync, even when balance is unchanged.
+- Full history is retained for charting.
+
+#### `depot_positions` — Upsert with quantity history
+
+```json
+{
+  "position_id": "12345",
+  "depot_id": "67890",
+  "wkn": "A1C34X",
+  "isin": "DE000A1C34X7",
+  "quantity": { "value": "50", "unit": "XXC" },
+  "current_value": { "value": "4321.00", "unit": "EUR" },
+  "purchase_price": { "value": "80.00", "unit": "EUR" },
+  "current_price": { "value": "86.42", "unit": "EUR" },
+  "instrument_name": "Acme Corp",
+  "quantity_history": [
+    { "quantity": "40", "recorded_at": "<datetime>" },
+    { "quantity": "50", "recorded_at": "<datetime>" }
+  ],
+  "last_synced_at": "<UTC datetime>"
+}
+```
+
+- `quantity_history` append is triggered **only on quantity change** (buy/sell event).
+- `current_value` and `current_price` are refreshed on every sync.
+
+#### `transactions` — Insert-only, idempotent
+
+```json
+{
+  "transaction_id": "TXN-98765",
+  "depot_id": "67890",
+  "wkn": "A1C34X",
+  "transaction_type": "BUY",
+  "quantity": "10",
+  "price": { "value": "82.00", "unit": "EUR" },
+  "booking_date": "<midnight UTC datetime>",
+  "recorded_at": "<UTC datetime>"
+}
+```
+
+- Transactions are never modified after insertion.
+- `transaction_exists(transaction_id)` prevents duplicate inserts.
+- `booking_date` is stored as a native UTC `datetime` (midnight) for MongoDB date indexing.
+
+### Helper Functions (`mongo_repo.py`)
+
+| Helper | Purpose |
+| ------ | ------- |
+| `_now()` | `datetime.now(UTC)` — Python 3.11+ `UTC` constant |
+| `_decimal_to_str(v)` | Converts `Decimal \| None` → `str \| None` for MongoDB storage |
+| `_date_to_datetime(d)` | Converts `date \| None` → midnight UTC `datetime \| None` for MongoDB |
+
+### Sync Rules Summary
+
+| Collection | On new data | When unchanged |
+| ---------- | ----------- | -------------- |
+| `account_balances` | Insert new snapshot | Touch `last_synced_at` only |
+| `depot_positions` | Upsert; append `quantity_history` if qty changed | Upsert; no history append |
+| `transactions` | Insert | Skip (idempotent) |
+
+### Installing Sync Dependencies
+
+```bash
+uv sync --extra sync   # adds azure-functions, pymongo, dnspython
+```
+
+### Running Sync Tests
+
+```bash
+uv run pytest tests/test_sync_service.py -v
+```
+
+Tests use `unittest.mock.AsyncMock` for the Comdirect client and `MagicMock` for `MongoRepo` — no real network or database calls.
+
+---
 
 ## Critical Implementation Details
 
@@ -572,21 +715,36 @@ git push
 
 ## Changelog
 
-### Current Version
+### Current Version (March 2026)
+
+- **Sync Function**: Azure HTTP-triggered sync function (`functions/sync/`) writing Comdirect data to MongoDB Atlas
+  - `MongoRepo` with insert-only balance snapshots, upsert depot positions, idempotent transaction inserts
+  - `SyncService` orchestration (testable independently of Azure runtime)
+  - Module-level `MongoRepo` singleton for connection pool reuse across warm invocations
+  - `last_synced_at` heartbeat timestamp alongside immutable `recorded_at`
+  - `_date_to_datetime()` helper for native MongoDB date storage
+- **`AmountValue` model**: Replaced all `dict | None # AmountValue` placeholders with `AmountValue(ComdirectBaseModel)` carrying `value: Decimal | None` and `unit: str | None`. Exported from `models/__init__.py`
+- **`Price` de-duplicated**: Removed duplicate `Price` class from `depots.py`; single definition lives in `instruments.py`
+- **`ClientSettings`**: Renamed `Settings` → `ClientSettings` in `src/comdirect_api/settings.py` to support the settings inheritance hierarchy
+- **`SyncSettings`**: New `functions/sync/settings.py` extending `ClientSettings` with MongoDB credentials
+- **99 tests**: 85 client tests + 14 sync function tests (all passing)
+
+### Previous Version (February 2026)
 
 - Messages API implementation (3 GET endpoints)
 - Base model architecture with automatic camelCase conversion
 - 85 tests with 83% coverage
-- Public API refinement (8 top-level models)
+- Public API refinement (`AmountValue` + 10 top-level response models)
 - Comprehensive error handling and token management
 
 ### Next Steps
 
-- Implement remaining GET endpoints (Orders, Reports)
+- Deploy sync function to Azure (Azure Functions + Consumption plan)
+- Add timer trigger for scheduled daily sync
+- Implement price history job (FinHub `/v1/history/{wkn}` → MongoDB time series)
+- Implement remaining GET endpoints (Orders)
 - Add rate limiting support
-- Consider modularization of `client.py`
-- Enhanced logging and debugging capabilities
 
 ---
 
-**Last Updated**: February 22, 2026
+**Last Updated**: March 15, 2026

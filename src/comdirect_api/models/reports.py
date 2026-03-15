@@ -9,14 +9,14 @@ depots, loans, fixed-term savings).
 from decimal import Decimal
 
 from .accounts import AccountBalance, Paging
-from .base import ComdirectBaseModel
+from .base import AmountValue, ComdirectBaseModel
 
 
 class BalanceAggregation(ComdirectBaseModel):
     """Aggregated balances across all reported products."""
 
-    balance_eur: dict | None = None          # AmountValue
-    available_cash_amount_eur: dict | None = None  # AmountValue
+    balance_eur: AmountValue | None = None
+    available_cash_amount_eur: AmountValue | None = None
 
 
 class VisaCardImage(ComdirectBaseModel):
@@ -40,7 +40,7 @@ class Card(ComdirectBaseModel):
     card_validity: str | None = None
     card_image: VisaCardImage | None = None
     primary_account_number_suffix: str | None = None
-    card_limit: dict | None = None          # AmountValue
+    card_limit: AmountValue | None = None
     status: str | None = None
 
 
@@ -49,8 +49,8 @@ class CardBalance(ComdirectBaseModel):
 
     card_id: str | None = None
     card: Card | None = None
-    balance: dict | None = None             # AmountValue
-    available_cash_amount: dict | None = None  # AmountValue
+    balance: AmountValue | None = None
+    available_cash_amount: AmountValue | None = None
 
 
 class InstallmentLoan(ComdirectBaseModel):
@@ -58,10 +58,10 @@ class InstallmentLoan(ComdirectBaseModel):
 
     installment_loan_id: str | None = None
     product_display_id: str | None = None
-    credit_amount: dict | None = None       # AmountValue
-    net_credit_amount: dict | None = None   # AmountValue
-    paid_out_amount: dict | None = None     # AmountValue
-    installment_amount: dict | None = None  # AmountValue
+    credit_amount: AmountValue | None = None
+    net_credit_amount: AmountValue | None = None
+    paid_out_amount: AmountValue | None = None
+    installment_amount: AmountValue | None = None
     contract_period_in_months: int | None = None
     effective_interest: Decimal | None = None
     nominal_interest: Decimal | None = None
@@ -73,21 +73,21 @@ class InstallmentLoanBalance(ComdirectBaseModel):
 
     installment_loan_id: str | None = None
     installment_loan: InstallmentLoan | None = None
-    balance: dict | None = None             # AmountValue
+    balance: AmountValue | None = None
 
 
 class FixedTermSavings(ComdirectBaseModel):
     """Balance information for a fixed-term savings product."""
 
     fixed_term_savings_id: str | None = None
-    savings_amount: dict | None = None      # AmountValue
-    interest_rate: dict | None = None       # AmountValue
+    savings_amount: AmountValue | None = None
+    interest_rate: AmountValue | None = None
     fixed_term_savings_type: str | None = None
     fixed_term_savings_display_name: str | None = None
     contract_period_in_months: int | None = None
     creation_date: str | None = None
     expiration_date: str | None = None
-    prolongation_amount: dict | None = None  # AmountValue
+    prolongation_amount: AmountValue | None = None
     extendable: bool | None = None
 
 
@@ -98,7 +98,9 @@ class ProductBalance(ComdirectBaseModel):
     product_type: str | None = None         # ACCOUNT, CARD, DEPOT, LOAN, SAVINGS
     target_client_id: str | None = None
     client_connection_type: str | None = None  # CURRENT_CLIENT, OTHER_COMDIRECT
-    balance: AccountBalance | CardBalance | InstallmentLoanBalance | FixedTermSavings | dict | None = None
+    balance: (
+        AccountBalance | CardBalance | InstallmentLoanBalance | FixedTermSavings | dict | None
+    ) = None
 
 
 class AllBalances(ComdirectBaseModel):
