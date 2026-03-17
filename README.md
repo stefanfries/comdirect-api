@@ -20,7 +20,7 @@ A modern, fully asynchronous Python client for the [Comdirect REST API](https://
 - 🐍 **Pythonic** - Clean snake_case interface with automatic camelCase for API calls
 - 🧪 **Well Tested** - 99 tests with 80% code coverage
 - 📦 **Modern Stack** - Python 3.11+, httpx, Pydantic V2, async/await
-- ☁️ **Azure Function Sync** - Scheduled HTTP-triggered Azure Function that syncs Comdirect data to MongoDB Atlas
+- ☁️ **Azure Function Sync** - HTTP-triggered Azure Function that syncs Comdirect data to MongoDB Atlas (on-demand; unattended scheduling not possible due to interactive push TAN requirement)
 
 ## 🚀 Tech Stack
 

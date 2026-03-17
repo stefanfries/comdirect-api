@@ -452,7 +452,7 @@ When adding new API endpoints:
 
 ## Sync Function Architecture
 
-The `functions/sync/` package is an Azure HTTP-triggered Function that syncs Comdirect data to MongoDB Atlas. It is designed to be triggered on a schedule (e.g., daily) or on demand.
+The `functions/sync/` package is an Azure HTTP-triggered Function that syncs Comdirect data to MongoDB Atlas. It is triggered on demand (manual HTTP POST) — fully automated/unattended scheduling is not supported because the Comdirect API requires an interactive push TAN approval on every authentication.
 
 ### Component Overview
 
@@ -746,7 +746,6 @@ git push
 ### Next Steps
 
 - Deploy sync function to Azure (Azure Functions + Consumption plan)
-- Add timer trigger for scheduled daily sync
 - Implement price history job (FinHub `/v1/history/{wkn}` → MongoDB time series)
 - Implement remaining GET endpoints (Orders)
 - Add rate limiting support
