@@ -143,6 +143,7 @@ Models are organized by domain in separate files:
 | `depots.py` | Depot and position data | `AccountDepots`, `DepotPositions`, `DepotPosition` |
 | `instruments.py` | Instrument/security data | `Instruments`, `Instrument`, `StaticData`, `Price` |
 | `messages.py` | Documents and messages | `Documents`, `Document`, `DocumentMetadata` |
+| `orders.py` | Order data | `Orders`, `Order`, `Execution`, `PercentageValue` |
 | `reports.py` | Reports / all-product balances | `AllBalances`, `ProductBalance`, `BalanceAggregation` |
 | `transactions.py` | Transaction data | `AccountTransactions`, `DepotTransactions` |
 
@@ -165,6 +166,8 @@ __all__ = [
     "Instruments",          # from get_instrument()
     "Documents",            # from get_documents()
     "AllBalances",          # from get_all_balances()
+    "Orders",               # from get_depot_orders()
+    "Order",                # from get_order()
 ]
 ```
 
@@ -381,7 +384,7 @@ Each module exposes a module-level `settings` instance. The sync function's `Syn
 
 ## API Coverage Strategy
 
-### Current Coverage (11/30 endpoints — 37%)
+### Current Coverage (13/30 endpoints — 43%)
 
 #### Implemented Endpoints
 
@@ -391,12 +394,14 @@ Each module exposes a module-level `settings` instance. The sync function's `Syn
 - ✅ `GET /accounts/{accountId}/balances` - Single account balance by ID
 - ✅ `GET /accounts/{accountId}/transactions` - Account transactions with filters
 
-**Brokerage (5/20)**:
+**Brokerage (7/20)**:
 
 - ✅ `GET /depot` - All depots
 - ✅ `GET /depot/{depotId}/positions` - All depot positions
 - ✅ `GET /depot/{depotId}/positions/{positionId}` - Single position details
 - ✅ `GET /depot/{depotId}/transactions` - Depot transactions
+- ✅ `GET /brokerage/depots/{depotId}/v3/orders` - All orders for a depot (with filters)
+- ✅ `GET /brokerage/v3/orders/{orderId}` - Single order by ID
 
 **Instruments (1/1)**:
 
@@ -747,7 +752,8 @@ git push
 
 - Deploy sync function to Azure (Azure Functions + Consumption plan)
 - Implement price history job (FinHub `/v1/history/{wkn}` → MongoDB time series)
-- Implement remaining GET endpoints (Orders)
+- Deploy sync function to Azure (Azure Functions + Consumption plan)
+- Implement price history job (FinHub `/v1/history/{wkn}` → MongoDB time series)
 - Add rate limiting support
 
 ---

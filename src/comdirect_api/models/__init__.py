@@ -6,6 +6,7 @@ from .base import AmountValue
 from .depots import AccountDepots, DepotPosition, DepotPositions
 from .instruments import Instruments
 from .messages import Documents
+from .orders import Order, Orders
 from .reports import AllBalances
 from .transactions import AccountTransactions, DepotTransactions
 
@@ -23,5 +24,7 @@ __all__ = [
     "Instruments",          # from get_instrument()
     "Documents",            # from get_documents()
     "AllBalances",          # from get_all_balances()
+    "Orders",               # from get_depot_orders()
+    "Order",                # from get_order()
 ]
 

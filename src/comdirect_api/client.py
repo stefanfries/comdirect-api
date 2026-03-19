@@ -33,6 +33,7 @@ from .models.auth import AuthResponse
 from .models.depots import AccountDepots, DepotPosition, DepotPositions
 from .models.instruments import Instruments
 from .models.messages import Documents
+from .models.orders import Order, Orders
 from .models.reports import AllBalances
 from .models.transactions import AccountTransactions, DepotTransactions
 from .utils import timestamp
@@ -1028,6 +1029,117 @@ class ComdirectClient:
                 f"({len(response.content)} bytes, {response.headers.get('content-type')})"
             )
             return response.content
+
+    # ==================== ORDERS API ====================
+
+    async def get_depot_orders(
+        self,
+        depot_id: str,
+        with_attr: str | None = None,
+        without_attr: str | None = None,
+        instrument_id: str | None = None,
+        isin: str | None = None,
+        wkn: str | None = None,
+        order_status: str | None = None,
+        venue_id: str | None = None,
+        order_type: str | None = None,
+        min_creation_timestamp: str | None = None,
+        max_creation_timestamp: str | None = None,
+        side: str | None = None,
+    ) -> Orders:
+        """
+        Get all orders for a specific depot.
+
+        Args:
+            depot_id: Depot identifier (UUID)
+            with_attr: Enable optional attribute: "instrument"
+            without_attr: Disable optional attribute: "executions"
+            instrument_id: Filter by instrument ID (UUID, WKN, or ISIN)
+            isin: Filter by ISIN
+            wkn: Filter by WKN
+            order_status: Filter by status. One of: PENDING, OPEN, EXECUTED, SETTLED,
+                          CANCELLED_USER, EXPIRED, CANCELLED_SYSTEM, CANCELLED_TRADE, UNKNOWN
+            venue_id: Filter by venue ID (UUID)
+            order_type: Filter by order type. One of: MARKET, LIMIT, QUOTE, STOP_MARKET,
+                        STOP_LIMIT, TRAILING_STOP_MARKET, TRAILING_STOP_LIMIT,
+                        ONE_CANCELS_OTHER, NEXT_ORDER
+            min_creation_timestamp: Earliest creation timestamp (YYYY-MM-DDThh:mm:ss,ffffff+zz)
+            max_creation_timestamp: Latest creation timestamp (YYYY-MM-DDThh:mm:ss,ffffff+zz)
+            side: Filter by transaction side: BUY or SELL
+
+        Returns:
+            Orders object with list of Order entries
+        """
+        if not self.banking_access_token:
+            raise ValueError(
+                "No banking access token available. Please obtain banking access first."
+            )
+
+        if self.is_token_expired():
+            await self.refresh_access_token()
+
+        async with httpx.AsyncClient() as client:
+            url = f"{self.BASE_URL}/brokerage/depots/{depot_id}/v3/orders"
+            headers = self._request_headers(self.banking_access_token)
+
+            params: dict = {}
+            if with_attr:
+                params["with-attr"] = with_attr
+            if without_attr:
+                params["without-attr"] = without_attr
+            if instrument_id:
+                params["instrumentId"] = instrument_id
+            if isin:
+                params["isin"] = isin
+            if wkn:
+                params["wkn"] = wkn
+            if order_status:
+                params["orderStatus"] = order_status
+            if venue_id:
+                params["venueId"] = venue_id
+            if order_type:
+                params["orderType"] = order_type
+            if min_creation_timestamp:
+                params["min-creationTimeStamp"] = min_creation_timestamp
+            if max_creation_timestamp:
+                params["max-creationTimeStamp"] = max_creation_timestamp
+            if side:
+                params["side"] = side
+
+            response = await client.get(url=url, headers=headers, params=params)
+            response.raise_for_status()
+            return Orders(**response.json())
+
+    async def get_order(self, order_id: str, without_attr: str | None = None) -> Order:
+        """
+        Get a single order by its ID.
+
+        Args:
+            order_id: Order identifier (UUID)
+            without_attr: Disable optional attribute: "executions"
+
+        Returns:
+            Order object
+        """
+        if not self.banking_access_token:
+            raise ValueError(
+                "No banking access token available. Please obtain banking access first."
+            )
+
+        if self.is_token_expired():
+            await self.refresh_access_token()
+
+        async with httpx.AsyncClient() as client:
+            url = f"{self.BASE_URL}/brokerage/v3/orders/{order_id}"
+            headers = self._request_headers(self.banking_access_token)
+
+            params: dict = {}
+            if without_attr:
+                params["without-attr"] = without_attr
+
+            response = await client.get(url=url, headers=headers, params=params)
+            response.raise_for_status()
+            return Order(**response.json())
 
     # ==================== REPORTS API ====================
 

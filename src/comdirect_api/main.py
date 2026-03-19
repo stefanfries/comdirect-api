@@ -138,6 +138,45 @@ async def main():
                 except Exception as e:
                     print(f"Instrument details not available: {e}")
 
+            print(f"\n--- Orders for Depot {depot_id} ---")
+            try:
+                orders = await client.get_depot_orders(depot_id=depot_id)
+                print(f"Number of orders: {len(orders.values)}")
+                for order in orders.values[:10]:
+                    order_id = order.order_id or "N/A"
+                    order_type = order.order_type or "N/A"
+                    status = order.order_status or "N/A"
+                    side = order.side or "N/A"
+                    instrument = order.instrument_id or "N/A"
+                    qty_val = order.quantity.value if order.quantity else "N/A"
+                    qty_unit = order.quantity.unit if order.quantity else ""
+                    limit_val = order.limit.value if order.limit else "MARKET"
+                    limit_unit = order.limit.unit if order.limit else ""
+                    created = order.creation_timestamp or "N/A"
+                    print(
+                        f"  - [{status}] {side} {order_type}: {instrument} "
+                        f"Qty: {qty_val} {qty_unit} @ {limit_val} {limit_unit} "
+                        f"(ID: {order_id}, Created: {created})"
+                    )
+                    # Fetch full order details including executions for executed orders
+                    if status == "EXECUTED" and order.order_id:
+                        try:
+                            full_order = await client.get_order(order_id=order.order_id)
+                            executions = full_order.executions or []
+                            if executions:
+                                for ex in executions:
+                                    ex_qty = ex.executed_quantity.value if ex.executed_quantity else "N/A"
+                                    ex_price = ex.execution_price.value if ex.execution_price else "N/A"
+                                    ex_unit = ex.execution_price.unit if ex.execution_price else ""
+                                    print(
+                                        f"      Execution: {ex_qty} @ {ex_price} {ex_unit} "
+                                        f"on {ex.execution_timestamp}"
+                                    )
+                        except Exception:
+                            pass  # execution details optional
+            except Exception as e:
+                print(f"No orders found: {e}")
+
     except Exception as e:
         print("Error retrieving depots:", e)
 

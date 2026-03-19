@@ -4,7 +4,7 @@
 ![Python Version](https://img.shields.io/badge/python-3.11%2B-blue)
 ![Code Style](https://img.shields.io/badge/code%20style-ruff-black)
 ![Type Checked](https://img.shields.io/badge/type%20checked-pydantic-green)
-![Tests](https://img.shields.io/badge/tests-101%20passed-success)
+![Tests](https://img.shields.io/badge/tests-115%20passed-success)
 ![Coverage](https://img.shields.io/badge/coverage-80%25-green)
 
 A modern, fully asynchronous Python client for the [Comdirect REST API](https://www.comdirect.de). Access your banking and brokerage accounts programmatically with full OAuth2 authentication and 2FA support.
@@ -18,7 +18,7 @@ A modern, fully asynchronous Python client for the [Comdirect REST API](https://
 - 📊 **Comprehensive API Coverage** - Banking, brokerage, depot positions, transactions, instruments, documents
 - 🔒 **Type-Safe** - Pydantic V2 models for all API responses with automatic camelCase conversion
 - 🐍 **Pythonic** - Clean snake_case interface with automatic camelCase for API calls
-- 🧪 **Well Tested** - 99 tests with 80% code coverage
+- 🧪 **Well Tested** - 115 tests with 80% code coverage
 - 📦 **Modern Stack** - Python 3.11+, httpx, Pydantic V2, async/await
 - ☁️ **Azure Function Sync** - HTTP-triggered Azure Function that syncs Comdirect data to MongoDB Atlas (on-demand; unattended scheduling not possible due to interactive push TAN requirement)
 
@@ -157,7 +157,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#sync-function-architecture) for 
 
 ## 📚 API Coverage
 
-### ✅ Implemented (11 of 30 endpoints - 37%)
+### ✅ Implemented (13 of 30 endpoints - 43%)
 
 #### Banking (3/3)
 
@@ -165,13 +165,15 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#sync-function-architecture) for 
 - ✅ `GET /accounts/{accountId}/balances` - Get single account balance
 - ✅ `GET /accounts/{accountId}/transactions` - Get account transactions with filters
 
-#### Brokerage (5/20)
+#### Brokerage (7/20)
 
 - ✅ `GET /depot` - Get all depots
 - ✅ `GET /depot/{depotId}/positions` - Get all depot positions
 - ✅ `GET /depot/{depotId}/positions/{positionId}` - Get single position details
 - ✅ `GET /depot/{depotId}/transactions` - Get depot transactions
 - ✅ `GET /instruments/{instrumentId}` - Get instrument details (WKN/ISIN)
+- ✅ `GET /brokerage/depots/{depotId}/v3/orders` - Get all orders for a depot (with filters)
+- ✅ `GET /brokerage/v3/orders/{orderId}` - Get single order by ID
 
 #### Messages (3/3)
 
@@ -193,8 +195,6 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#sync-function-architecture) for 
 - ✅ Token revocation (`DELETE /oauth/revoke`)
 
 ### 🚧 Planned
-
-- **Orders API** - View existing orders (read-only)
 
 > **Note**: Order placement (POST/PATCH/DELETE operations) is intentionally excluded. This client focuses on read-only operations for account monitoring and analysis.
 
