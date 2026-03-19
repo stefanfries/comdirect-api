@@ -165,8 +165,16 @@ async def main():
                             executions = full_order.executions or []
                             if executions:
                                 for ex in executions:
-                                    ex_qty = ex.executed_quantity.value if ex.executed_quantity else "N/A"
-                                    ex_price = ex.execution_price.value if ex.execution_price else "N/A"
+                                    ex_qty = (
+                                        ex.executed_quantity.value
+                                        if ex.executed_quantity
+                                        else "N/A"
+                                    )
+                                    ex_price = (
+                                        ex.execution_price.value
+                                        if ex.execution_price
+                                        else "N/A"
+                                    )
                                     ex_unit = ex.execution_price.unit if ex.execution_price else ""
                                     print(
                                         f"      Execution: {ex_qty} @ {ex_price} {ex_unit} "

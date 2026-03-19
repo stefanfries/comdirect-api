@@ -120,7 +120,7 @@ async def test_get_depot_orders_with_filters(client_instance):
     with patch("httpx.AsyncClient") as mock_client_class:
         mock_client_class.return_value.__aenter__.return_value = mock_http_client
 
-        result = await client_instance.get_depot_orders(
+        result = await client_instance.get_depot_orders(  # noqa: F841
             depot_id="depot_123",
             with_attr="instrument",
             without_attr="executions",

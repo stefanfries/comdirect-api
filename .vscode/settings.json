@@ -10,7 +10,6 @@
     },
     "python.envFile": "${workspaceFolder}/.env",
     "python.terminal.activateEnvironment": true,
-    "python.venvPath": "${workspaceFolder}/.venv",
     // Python settings
     "python.testing.pytestEnabled": true,
     "python.testing.unittestEnabled": false,
