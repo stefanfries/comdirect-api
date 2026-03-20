@@ -76,11 +76,15 @@ class MongoRepo:
 
     def touch_balance_last_synced(self, account_id: str) -> None:
         """Update last_synced_at on the latest balance doc without inserting a new one."""
-        self._db["account_balances"].update_one(
+        doc = self._db["account_balances"].find_one(
             {"account_id": account_id},
-            {"$set": {"last_synced_at": _now()}},
             sort=[("recorded_at", DESCENDING)],
         )
+        if doc:
+            self._db["account_balances"].update_one(
+                {"_id": doc["_id"]},
+                {"$set": {"last_synced_at": _now()}},
+            )
 
     # ------------------------------------------------------------------
     # depot_snapshots — insert-only; one document = entire depot state
@@ -117,11 +121,15 @@ class MongoRepo:
 
     def touch_depot_last_synced(self, depot_id: str) -> None:
         """Update last_synced_at on the latest snapshot without inserting a new one."""
-        self._db["depot_snapshots"].update_one(
+        doc = self._db["depot_snapshots"].find_one(
             {"depot_id": depot_id},
-            {"$set": {"last_synced_at": _now()}},
             sort=[("recorded_at", DESCENDING)],
         )
+        if doc:
+            self._db["depot_snapshots"].update_one(
+                {"_id": doc["_id"]},
+                {"$set": {"last_synced_at": _now()}},
+            )
 
     # ------------------------------------------------------------------
     # transactions — insert-only, keyed by transaction_id
