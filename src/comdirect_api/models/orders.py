@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-from decimal import Decimal
-
 from .base import AmountValue, ComdirectBaseModel
 
 
