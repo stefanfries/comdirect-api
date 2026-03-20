@@ -28,12 +28,13 @@ comdirect_api/
 │           ├── reports.py      # Aggregated balance models
 │           └── transactions.py # Transaction models
 ├── functions/
-│   └── sync/                   # Azure HTTP-triggered sync function
-│       ├── function_app.py     # Azure Function entry point
+│   └── sync/                   # Sync package (runs via GitHub Actions)
+│       ├── run.py              # GitHub Actions entrypoint (asyncio.run)
 │       ├── sync_service.py     # Sync orchestration (testable)
 │       ├── mongo_repo.py       # MongoDB Atlas read/write
-│       └── settings.py         # SyncSettings (extends ClientSettings)
-├── tests/                      # Test suite (99 tests, 80% coverage)
+│       ├── settings.py         # SyncSettings (extends ClientSettings)
+│       └── function_app.py     # Legacy Azure Function entry point (unused)
+├── tests/                      # Test suite (115 tests, 80% coverage)
 │   ├── __init__.py
 │   ├── conftest.py             # Shared test fixtures
 │   ├── test_auth.py            # Authentication tests
@@ -457,16 +458,28 @@ When adding new API endpoints:
 
 ## Sync Function Architecture
 
-The `functions/sync/` package is an Azure HTTP-triggered Function that syncs Comdirect data to MongoDB Atlas. It is triggered on demand (manual HTTP POST) — fully automated/unattended scheduling is not supported because the Comdirect API requires an interactive push TAN approval on every authentication.
+The `functions/sync/` package syncs Comdirect data to MongoDB Atlas. It is triggered manually via a **GitHub Actions `workflow_dispatch`** workflow — fully automated/unattended scheduling is not supported because the Comdirect API requires an interactive push TAN approval on every authentication.
+
+### Deployment
+
+The sync runs on GitHub Actions (`.github/workflows/sync.yml`). Trigger it by clicking **"Run workflow"** in the Actions tab on GitHub. The runner:
+
+1. Checks out the repo and installs Python 3.12 + `uv`
+2. Installs dependencies: `uv sync --extra sync`
+3. Runs `uv run python -m functions.sync.run`
+4. Secrets (`CLIENT_ID`, `CLIENT_SECRET`, `ZUGANGSNUMMER`, `PIN`, `MONGODB_CONNECTION_STRING`) are injected as environment variables
+
+Approve the push TAN on your phone within ~60 seconds of triggering the workflow.
 
 ### Component Overview
 
 | File | Responsibility |
 | ---- | -------------- |
-| `function_app.py` | Azure Function entry point; creates a per-request `ComdirectClient`; holds module-level `MongoRepo` singleton |
+| `run.py` | GitHub Actions entrypoint; `asyncio.run(main())`; creates `ComdirectClient` + `MongoRepo`, calls `SyncService.run_full_sync()`, exits 1 on failure |
 | `sync_service.py` | Orchestration logic; fully testable; depends on `ComdirectClient` and `MongoRepo` abstractions |
 | `mongo_repo.py` | All MongoDB Atlas reads and writes; no Comdirect knowledge |
 | `settings.py` | `SyncSettings(ClientSettings)` — adds `mongodb_connection_string` and `mongodb_database` |
+| `function_app.py` | Legacy Azure Function entry point — kept for reference, not actively used |
 
 ### Module-Level Singleton (Connection Pool)
 
@@ -726,7 +739,11 @@ git push
 
 ### Current Version (March 2026)
 
-- **Sync Function**: Azure HTTP-triggered sync function (`functions/sync/`) writing Comdirect data to MongoDB Atlas
+- **GitHub Actions deployment** (`workflow_dispatch`): Sync is now triggered manually from the GitHub Actions UI — no Azure infrastructure required. Secrets are injected as environment variables. The runner authenticates, waits for push TAN approval, syncs all data, and exits.
+- **`functions/sync/run.py`**: Standalone async entrypoint (`python -m functions.sync.run`) used by GitHub Actions. Creates `MongoRepo` and `ComdirectClient`, calls `SyncService.run_full_sync()`, prints JSON result, exits 1 on failure.
+- **Bug fix — `touch` methods**: `touch_balance_last_synced()` and `touch_depot_last_synced()` in `mongo_repo.py` rewritten to use `find_one(..., sort=...)` + `update_one({"_id": ...})` instead of passing `sort` to `update_one` directly (the `sort` parameter on `update_one` rejects list-of-tuples on MongoDB Atlas).
+- **115 tests** passing (all sync + client tests green).
+- **Sync Function**: `functions/sync/` package writing Comdirect data to MongoDB Atlas
   - `MongoRepo` with insert-only balance snapshots, insert-only depot snapshots, idempotent transaction inserts
   - `SyncService` orchestration (testable independently of Azure runtime)
   - Module-level `MongoRepo` singleton for connection pool reuse across warm invocations
@@ -750,9 +767,7 @@ git push
 
 ### Next Steps
 
-- Deploy sync function to Azure (Azure Functions + Consumption plan)
-- Implement price history job (FinHub `/v1/history/{wkn}` → MongoDB time series)
-- Deploy sync function to Azure (Azure Functions + Consumption plan)
+- ✅ ~~Deploy sync function~~ — deployed via GitHub Actions `workflow_dispatch` (March 2026)
 - Implement price history job (FinHub `/v1/history/{wkn}` → MongoDB time series)
 - Add rate limiting support
 

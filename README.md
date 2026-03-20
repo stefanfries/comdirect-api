@@ -20,7 +20,7 @@ A modern, fully asynchronous Python client for the [Comdirect REST API](https://
 - 🐍 **Pythonic** - Clean snake_case interface with automatic camelCase for API calls
 - 🧪 **Well Tested** - 115 tests with 80% code coverage
 - 📦 **Modern Stack** - Python 3.11+, httpx, Pydantic V2, async/await
-- ☁️ **Azure Function Sync** - HTTP-triggered Azure Function that syncs Comdirect data to MongoDB Atlas (on-demand; unattended scheduling not possible due to interactive push TAN requirement)
+- ☁️ **GitHub Actions Sync** - Manual `workflow_dispatch` workflow that syncs Comdirect data to MongoDB Atlas on demand (unattended scheduling not possible due to interactive push TAN requirement)
 
 ## 🚀 Tech Stack
 
@@ -33,7 +33,7 @@ A modern, fully asynchronous Python client for the [Comdirect REST API](https://
 | Testing | `pytest` + `pytest-asyncio` |
 | Code Quality | `ruff` |
 | Sync Storage | MongoDB Atlas via `pymongo` |
-| Sync Runtime | Azure Functions v2 (Python) |
+| Sync Runtime | GitHub Actions (`workflow_dispatch`) |
 
 ## 📦 Installation
 
@@ -138,16 +138,13 @@ The factory method ``ComdirectClient.create()`` handles the complete authenticat
 
 > **Note**: You'll need to approve the push TAN notification on your phone during initialization.
 
-### Sync Function (Azure)
+### Sync to MongoDB (GitHub Actions)
 
-The `functions/sync/` directory contains an Azure HTTP-triggered Function that syncs Comdirect data to MongoDB Atlas. Trigger it via `POST /api/sync` (requires Azure Function key):
+The `functions/sync/` directory contains a standalone sync script triggered via a **GitHub Actions `workflow_dispatch`** workflow. Trigger it by clicking **"Run workflow"** in the [Actions tab](https://github.com/stefanfries/comdirect-api/actions) on GitHub — no infrastructure required.
 
-```bash
-curl -X POST https://<function-app>.azurewebsites.net/api/sync \
-  -H "x-functions-key: <your-function-key>"
-```
+The workflow installs dependencies, runs `python -m functions.sync.run`, and waits for you to approve the push TAN on your phone (~60 seconds). Required GitHub Secrets: `CLIENT_ID`, `CLIENT_SECRET`, `ZUGANGSNUMMER`, `PIN`, `MONGODB_CONNECTION_STRING`.
 
-The sync function:
+The sync:
 
 - **Snapshots account balances** — inserts a new document on value change; updates `last_synced_at` heartbeat otherwise
 - **Snapshots the entire depot** — inserts a new document (all positions) when composition changes (qty change, new position, sold position); updates `last_synced_at` heartbeat otherwise. Each position includes `current_price` (per-unit), `current_value` (total), and `purchase_price`.
@@ -224,7 +221,7 @@ uv run ruff check . --fix            # Auto-fix issues
 
 ### Quality Standards
 
-- **Tests**: 101 passing tests (85 client + 16 sync function)
+- **Tests**: 115 passing tests
 - **Coverage**: 80% code coverage
 - **Linting**: Zero errors, zero warnings
 - **Type Safety**: Full Pydantic V2 validation
@@ -253,12 +250,12 @@ comdirect_api/
 │           ├── reports.py      # Reports & aggregated balance models
 │           └── transactions.py # Transaction models
 ├── functions/
-│   └── sync/                   # Azure HTTP-triggered sync function
-│       ├── function_app.py     # Azure Function entry point
+│   └── sync/                   # Sync package (runs via GitHub Actions)
+│       ├── run.py              # GitHub Actions entrypoint (asyncio.run)
 │       ├── sync_service.py     # Orchestration logic (testable)
 │       ├── mongo_repo.py       # MongoDB Atlas read/write
 │       └── settings.py         # SyncSettings (extends ClientSettings)
-├── tests/                      # Test suite (99 tests, 80% coverage)
+├── tests/                      # Test suite (115 tests, 80% coverage)
 │   ├── conftest.py             # Shared test fixtures
 │   ├── test_auth.py            # Authentication tests
 │   ├── test_banking.py         # Banking operations tests
