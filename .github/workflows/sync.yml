@@ -1,0 +1,30 @@
+name: Comdirect Sync
+
+on:
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10     # Comdirect TAN must be approved within this window
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --extra sync
+
+      - name: Run sync
+        env:
+          CLIENT_ID: ${{ secrets.CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
+          ZUGANGSNUMMER: ${{ secrets.ZUGANGSNUMMER }}
+          PIN: ${{ secrets.PIN }}
+          MONGODB_CONNECTION_STRING: ${{ secrets.MONGODB_CONNECTION_STRING }}
+          MONGODB_DATABASE: finance
+        run: uv run python -m functions.sync.run
