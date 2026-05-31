@@ -54,18 +54,29 @@ uv sync --extra sync
 Create a `.env` file in the project root (copy from `.env.example`):
 
 ```env
-# Comdirect credentials (required for all usage)
-CLIENT_ID=your_client_id
-CLIENT_SECRET=your_client_secret
-ZUGANGSNUMMER=your_account_number
-PIN=your_pin
+# Comdirect OAuth application credentials
+CLIENT_ID = your_client_id
+CLIENT_SECRET = your_client_secret
+
+# Account credentials — one block per Comdirect login
+# DISPLAY_NAME is an optional human-readable label stored in MongoDB
+ACCOUNTS__DEPOT11__ZUGANGSNUMMER = your_zugangsnummer
+ACCOUNTS__DEPOT11__PIN = your_pin
+ACCOUNTS__DEPOT11__DISPLAY_NAME = "My Depot"
+
+# Add more accounts as needed:
+# ACCOUNTS__DEPOT21__ZUGANGSNUMMER = other_zugangsnummer
+# ACCOUNTS__DEPOT21__PIN = other_pin
+# ACCOUNTS__DEPOT21__DISPLAY_NAME = "Second Login Depot"
 
 # MongoDB Atlas (required only for the sync function)
-MONGODB_CONNECTION_STRING=mongodb+srv://...
-MONGODB_DATABASE=finance
+MONGODB_CONNECTION_STRING = "mongodb+srv://..."
+MONGODB_DATABASE = finance
 ```
 
 > **Important**: Never commit your `.env` file to version control!
+
+The account key (e.g. `DEPOT11`) becomes the `account_name` stored in MongoDB. You can define as many accounts as needed — each requires its own Comdirect login credentials. A single `CLIENT_ID` / `CLIENT_SECRET` covers all accounts.
 
 ## 💻 Usage
 
@@ -142,7 +153,21 @@ The factory method ``ComdirectClient.create()`` handles the complete authenticat
 
 The `functions/sync/` directory contains a standalone sync script triggered via a **GitHub Actions `workflow_dispatch`** workflow. Trigger it by clicking **"Run workflow"** in the [Actions tab](https://github.com/stefanfries/comdirect-api/actions) on GitHub — no infrastructure required.
 
-The workflow installs dependencies, runs `python -m functions.sync.run`, and waits for you to approve the push TAN on your phone (~60 seconds). Required GitHub Secrets: `CLIENT_ID`, `CLIENT_SECRET`, `ZUGANGSNUMMER`, `PIN`, `MONGODB_CONNECTION_STRING`.
+The workflow installs dependencies, runs `python -m functions.sync.run --accounts "${{ inputs.accounts }}"`, and waits for you to approve push TANs sequentially (one per account, ~60 seconds each).
+
+**Required GitHub Secrets** (Settings → Secrets and variables → Actions):
+
+| Secret | Description |
+| ------ | ----------- |
+| `CLIENT_ID` | OAuth application client ID |
+| `CLIENT_SECRET` | OAuth application client secret |
+| `ACCOUNTS__DEPOT11__ZUGANGSNUMMER` | Account login number |
+| `ACCOUNTS__DEPOT11__PIN` | Account PIN |
+| `ACCOUNTS__DEPOT11__DISPLAY_NAME` | Human-readable label (optional) |
+| `ACCOUNTS__DEPOT12__*` | Repeat for each additional account |
+| `MONGODB_CONNECTION_STRING` | Atlas connection string |
+
+The optional **`accounts` input** accepts a comma-separated list (e.g. `DEPOT11,DEPOT22`, case-insensitive) to sync only specific accounts. Leave blank to sync all.
 
 The sync:
 

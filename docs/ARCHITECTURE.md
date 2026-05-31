@@ -352,25 +352,45 @@ test(banking): add transaction filter tests
 Create `.env` file in project root:
 
 ```env
-CLIENT_ID=your_client_id
-CLIENT_SECRET=your_client_secret
-ZUGANGSNUMMER=your_account_number
-PIN=your_pin
+# Comdirect OAuth application credentials
+CLIENT_ID = your_client_id
+CLIENT_SECRET = your_client_secret
+
+# Account credentials — one block per Comdirect login
+# DISPLAY_NAME is an optional human-readable label stored in MongoDB
+ACCOUNTS__DEPOT11__ZUGANGSNUMMER = your_zugangsnummer
+ACCOUNTS__DEPOT11__PIN = your_pin
+ACCOUNTS__DEPOT11__DISPLAY_NAME = "My First Depot"
+
+# ACCOUNTS__DEPOT21__ZUGANGSNUMMER = other_zugangsnummer
+# ACCOUNTS__DEPOT21__PIN = other_pin
+# ACCOUNTS__DEPOT21__DISPLAY_NAME = "Second Login Depot"
+
+# MongoDB Atlas (sync function only)
+MONGODB_CONNECTION_STRING = "mongodb+srv://..."
+MONGODB_DATABASE = finance
 ```
 
 #### Settings Management
 
-Settings are managed via Pydantic Settings in a two-level hierarchy:
+Settings are managed via Pydantic Settings in a two-level hierarchy using `env_nested_delimiter="__"`:
 
 ```python
 # src/comdirect_api/settings.py
-class ClientSettings(BaseSettings):
-    client_id: str
-    client_secret: str
-    zugangsnummer: str
-    pin: str
+class AccountSettings(BaseModel):
+    zugangsnummer: SecretStr
+    pin: SecretStr
+    display_name: str | None = None  # Optional human-readable label
 
-    model_config = SettingsConfigDict(env_file=".env")
+class ClientSettings(BaseSettings):
+    client_id: SecretStr
+    client_secret: SecretStr
+    accounts: dict[str, AccountSettings]   # key = account name (e.g. "depot11")
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_nested_delimiter="__",
+    )
 
 
 # functions/sync/settings.py
@@ -379,7 +399,7 @@ class SyncSettings(ClientSettings):
     mongodb_database: str = "finance"
 ```
 
-Each module exposes a module-level `settings` instance. The sync function's `SyncSettings` inherits all Comdirect credentials from `ClientSettings` and adds MongoDB-specific fields.
+The account key (e.g. `depot11`) becomes the `account_name` stored in every MongoDB document. Each account requires its own Comdirect login credentials; a single `CLIENT_ID`/`CLIENT_SECRET` covers all accounts.
 
 **Never commit** `.env` files or credentials to version control.
 
@@ -462,14 +482,28 @@ The `functions/sync/` package syncs Comdirect data to MongoDB Atlas. It is trigg
 
 ### Deployment
 
-The sync runs on GitHub Actions (`.github/workflows/sync.yml`). Trigger it by clicking **"Run workflow"** in the Actions tab on GitHub. The runner:
+The sync runs on GitHub Actions (`.github/workflows/sync.yml`). Trigger it by clicking **"Run workflow"** in the Actions tab on GitHub. The optional **`accounts` input** accepts a comma-separated list (e.g. `DEPOT11,DEPOT22`, case-insensitive) to sync only specific accounts; leave blank to sync all.
+
+The runner:
 
 1. Checks out the repo and installs Python 3.12 + `uv`
 2. Installs dependencies: `uv sync --extra sync`
-3. Runs `uv run python -m functions.sync.run`
-4. Secrets (`CLIENT_ID`, `CLIENT_SECRET`, `ZUGANGSNUMMER`, `PIN`, `MONGODB_CONNECTION_STRING`) are injected as environment variables
+3. Runs `uv run python -m functions.sync.run --accounts "${{ inputs.accounts }}"`
+4. Secrets are injected as environment variables
 
-Approve the push TAN on your phone within ~60 seconds of triggering the workflow.
+Approve each push TAN on your phone within ~60 seconds of triggering the workflow (one TAN per account, sequential).
+
+**Required GitHub Secrets** (Settings → Secrets and variables → Actions):
+
+| Secret | Description |
+| ------ | ----------- |
+| `CLIENT_ID` | OAuth application client ID |
+| `CLIENT_SECRET` | OAuth application client secret |
+| `ACCOUNTS__DEPOT11__ZUGANGSNUMMER` | Account login number |
+| `ACCOUNTS__DEPOT11__PIN` | Account PIN |
+| `ACCOUNTS__DEPOT11__DISPLAY_NAME` | Human-readable label (optional, stored in MongoDB) |
+| `ACCOUNTS__DEPOT12__*` … | Repeat pattern for each additional account |
+| `MONGODB_CONNECTION_STRING` | Atlas connection string |
 
 ### Component Overview
 
@@ -500,6 +534,8 @@ _repo = MongoRepo(
 ```json
 {
   "account_id": "DE89370400440532013000",
+  "account_name": "depot11",
+  "display_name": "Megatrend Folger",
   "iban": "DE89370400440532013000",
   "account_type": "Girokonto",
   "balance": { "value": "1234.56", "unit": "EUR" },
@@ -517,6 +553,8 @@ _repo = MongoRepo(
 ```json
 {
   "depot_id": "67890",
+  "account_name": "depot11",
+  "display_name": "Megatrend Folger",
   "positions": [
     {
       "position_id": "12345",
@@ -546,6 +584,8 @@ _repo = MongoRepo(
 {
   "transaction_id": "TXN-98765",
   "depot_id": "67890",
+  "account_name": "depot11",
+  "display_name": "Megatrend Folger",
   "wkn": "A1C34X",
   "transaction_type": "BUY",
   "quantity": "10",
@@ -632,7 +672,7 @@ Clients can request specific pages using query parameters or limit result count.
 
 ### API Constraints
 
-- **Rate Limiting**: Not documented by Comdirect (best practice: conservative usage)
+- **Rate Limiting**: Comdirect enforces a rate limit on brokerage endpoints. The sync function retries 429 responses up to 3 times with exponential backoff (2s, 4s, 8s) for both `get_depot_positions` and `get_depot_transactions`.
 - **Session Duration**: ~30 minutes before token refresh required
 - **TAN Approval**: Requires physical mobile device access
 - **Scope Permissions**: Different tokens for session vs banking operations
@@ -737,7 +777,14 @@ git push
 
 ## Changelog
 
-### Current Version (March 2026)
+### May 2026
+
+- **Multi-account `display_name` support**: `AccountSettings` now has an optional `display_name: str | None` field. Set via `ACCOUNTS__<NAME>__DISPLAY_NAME` in `.env` or GitHub Secrets. Stored in every MongoDB document (`account_balances`, `depot_snapshots`, `transactions`) alongside `account_name`.
+- **`--accounts` CLI filter** (case-insensitive): `python -m functions.sync.run --accounts DEPOT11,DEPOT22` syncs only the specified accounts. The GitHub Actions `workflow_dispatch` exposes this as an optional input field.
+- **429 retry with exponential backoff**: Parallel sync of multiple accounts was hitting Comdirect's rate limit. `sync_depot_positions` and `sync_depot_transactions` now retry on HTTP 429 up to 3 times (waits: 2s, 4s, 8s).
+- **`DISPLAY_NAME` secrets added to workflow**: `.github/workflows/sync.yml` now injects `ACCOUNTS__<NAME>__DISPLAY_NAME` secrets for all 4 accounts.
+
+### March 2026
 
 - **GitHub Actions deployment** (`workflow_dispatch`): Sync is now triggered manually from the GitHub Actions UI — no Azure infrastructure required. Secrets are injected as environment variables. The runner authenticates, waits for push TAN approval, syncs all data, and exits.
 - **`functions/sync/run.py`**: Standalone async entrypoint (`python -m functions.sync.run`) used by GitHub Actions. Creates `MongoRepo` and `ComdirectClient`, calls `SyncService.run_full_sync()`, prints JSON result, exits 1 on failure.

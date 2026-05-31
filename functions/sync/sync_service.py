@@ -191,7 +191,7 @@ class SyncService:
                 if exc.response.status_code == 429 and attempt < 3:
                     wait = 2 ** (attempt + 1)
                     logger.warning(
-                        "Rate limited fetching depot %s transactions, retrying in %ds (attempt %d/3)…",
+                        "Rate limited fetching depot %s transactions, retrying in %ds (attempt %d/3)…",  # noqa: E501
                         depot_id, wait, attempt + 1,
                     )
                     await asyncio.sleep(wait)
