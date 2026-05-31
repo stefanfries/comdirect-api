@@ -40,7 +40,7 @@ def _parse_args() -> set[str] | None:
     )
     args = parser.parse_args()
     if args.accounts.strip():
-        return {name.strip() for name in args.accounts.split(",")}
+        return {name.strip().lower() for name in args.accounts.split(",")}
     return None  # all accounts
 
 
