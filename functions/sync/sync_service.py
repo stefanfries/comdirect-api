@@ -23,10 +23,17 @@ class SyncService:
     - transactions      : insert-only, idempotent (skipped if transaction_id exists).
     """
 
-    def __init__(self, client: ComdirectClient, repo: MongoRepo, account_name: str) -> None:
+    def __init__(
+        self,
+        client: ComdirectClient,
+        repo: MongoRepo,
+        account_name: str,
+        display_name: str | None = None,
+    ) -> None:
         self._client = client
         self._repo = repo
         self._account_name = account_name
+        self._display_name = display_name
 
     async def sync_account_balances(self) -> dict:
         """Fetch all account balances. Insert snapshot on change, touch timestamp otherwise."""
@@ -50,6 +57,7 @@ class SyncService:
             await self._repo.insert_balance(
                 account_id=account_id,
                 account_name=self._account_name,
+                display_name=self._display_name,
                 iban=ab.account.iban if ab.account else None,
                 account_type=(
                     ab.account.account_type.text
@@ -144,6 +152,7 @@ class SyncService:
         await self._repo.insert_depot_snapshot(
             depot_id=depot_id,
             account_name=self._account_name,
+            display_name=self._display_name,
             positions=snapshot_positions,
         )
         logger.info(
@@ -173,6 +182,7 @@ class SyncService:
                 transaction_id=txn.transaction_id,
                 depot_id=depot_id,
                 account_name=self._account_name,
+                display_name=self._display_name,
                 wkn=(
                     txn.instrument.wkn
                     if txn.instrument and isinstance(txn.instrument, dict) is False

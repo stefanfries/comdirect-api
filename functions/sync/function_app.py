@@ -54,7 +54,12 @@ async def comdirect_sync(req: func.HttpRequest) -> func.HttpResponse:
 
         # Parallel sync across all authenticated clients
         tasks = [
-            SyncService(client, _repo, account_name=name).run_full_sync()
+            SyncService(
+                client,
+                _repo,
+                account_name=name,
+                display_name=settings.accounts[name].display_name,
+            ).run_full_sync()
             for name, client in clients.items()
         ]
         results_list = await asyncio.gather(*tasks)

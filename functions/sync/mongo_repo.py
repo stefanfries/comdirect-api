@@ -58,6 +58,7 @@ class MongoRepo:
         self,
         account_id: str,
         account_name: str,
+        display_name: str | None,
         iban: str | None,
         account_type: str | None,
         value: Decimal | None,
@@ -68,6 +69,7 @@ class MongoRepo:
         await self._db["account_balances"].insert_one({
             "account_id": account_id,
             "account_name": account_name,
+            "display_name": display_name,
             "iban": iban,
             "account_type": account_type,
             "balance": {
@@ -105,6 +107,7 @@ class MongoRepo:
         self,
         depot_id: str,
         account_name: str,
+        display_name: str | None,
         positions: list[dict],
     ) -> None:
         """
@@ -120,6 +123,7 @@ class MongoRepo:
         await self._db["depot_snapshots"].insert_one({
             "depot_id": depot_id,
             "account_name": account_name,
+            "display_name": display_name,
             "positions": positions,
             "recorded_at": now,
             "last_synced_at": now,
@@ -154,6 +158,7 @@ class MongoRepo:
         transaction_id: str,
         depot_id: str,
         account_name: str,
+        display_name: str | None,
         wkn: str | None,
         booking_date: date | None,
         transaction_type: str | None,
@@ -168,6 +173,7 @@ class MongoRepo:
             "transaction_id": transaction_id,
             "depot_id": depot_id,
             "account_name": account_name,
+            "display_name": display_name,
             "wkn": wkn,
             "booking_date": _date_to_datetime(booking_date),
             "transaction_type": transaction_type,

@@ -96,6 +96,7 @@ async def test_sync_balances_new_account_inserts():
     repo.insert_balance.assert_called_once_with(
         account_id="ACC1",
         account_name="TEST",
+        display_name=None,
         iban="DE00",
         account_type="Girokonto",
         value=Decimal("100.00"),

@@ -75,7 +75,12 @@ async def main() -> None:
         # --- Parallel sync (all authenticated clients run concurrently) ---
         logger.info("Starting parallel sync for: %s", ", ".join(clients))
         tasks = [
-            SyncService(client, repo, account_name=name).run_full_sync()
+            SyncService(
+                client,
+                repo,
+                account_name=name,
+                display_name=settings.accounts[name].display_name,
+            ).run_full_sync()
             for name, client in clients.items()
         ]
         results_list = await asyncio.gather(*tasks)
