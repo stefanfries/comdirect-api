@@ -3,8 +3,9 @@
 from datetime import UTC, date, datetime
 from decimal import Decimal
 
-from pymongo import ASCENDING, DESCENDING, MongoClient
-from pymongo.database import Database
+from pymongo import ASCENDING, DESCENDING
+from pymongo.asynchronous.database import AsyncDatabase
+from pymongo.asynchronous.mongo_client import AsyncMongoClient
 
 
 def _now() -> datetime:
@@ -26,35 +27,37 @@ class MongoRepo:
     """All Atlas read/write operations for the sync service."""
 
     def __init__(self, connection_string: str, database: str) -> None:
-        self._client = MongoClient(connection_string)
-        self._db: Database = self._client[database]
+        self._client = AsyncMongoClient(connection_string)
+        self._db: AsyncDatabase = self._client[database]
 
-        # Ensure indexes on first use
-        self._db["account_balances"].create_index(
+    async def initialize(self) -> None:
+        """Create indexes. Call once before first use."""
+        await self._db["account_balances"].create_index(
             [("account_id", ASCENDING), ("recorded_at", DESCENDING)]
         )
-        self._db["depot_snapshots"].create_index(
+        await self._db["depot_snapshots"].create_index(
             [("depot_id", ASCENDING), ("recorded_at", DESCENDING)]
         )
-        self._db["transactions"].create_index("transaction_id", unique=True)
+        await self._db["transactions"].create_index("transaction_id", unique=True)
 
-    def close(self) -> None:
-        self._client.close()
+    async def close(self) -> None:
+        await self._client.aclose()
 
     # ------------------------------------------------------------------
     # account_balances — insert-only time series
     # ------------------------------------------------------------------
 
-    def get_latest_balance(self, account_id: str) -> dict | None:
+    async def get_latest_balance(self, account_id: str) -> dict | None:
         """Return the most recently inserted balance document for an account."""
-        return self._db["account_balances"].find_one(
+        return await self._db["account_balances"].find_one(
             {"account_id": account_id},
             sort=[("recorded_at", DESCENDING)],
         )
 
-    def insert_balance(
+    async def insert_balance(
         self,
         account_id: str,
+        account_name: str,
         iban: str | None,
         account_type: str | None,
         value: Decimal | None,
@@ -62,8 +65,9 @@ class MongoRepo:
     ) -> None:
         """Insert a new balance snapshot. Sets both recorded_at and last_synced_at."""
         now = _now()
-        self._db["account_balances"].insert_one({
+        await self._db["account_balances"].insert_one({
             "account_id": account_id,
+            "account_name": account_name,
             "iban": iban,
             "account_type": account_type,
             "balance": {
@@ -74,14 +78,14 @@ class MongoRepo:
             "last_synced_at": now,
         })
 
-    def touch_balance_last_synced(self, account_id: str) -> None:
+    async def touch_balance_last_synced(self, account_id: str) -> None:
         """Update last_synced_at on the latest balance doc without inserting a new one."""
-        doc = self._db["account_balances"].find_one(
+        doc = await self._db["account_balances"].find_one(
             {"account_id": account_id},
             sort=[("recorded_at", DESCENDING)],
         )
         if doc:
-            self._db["account_balances"].update_one(
+            await self._db["account_balances"].update_one(
                 {"_id": doc["_id"]},
                 {"$set": {"last_synced_at": _now()}},
             )
@@ -90,16 +94,17 @@ class MongoRepo:
     # depot_snapshots — insert-only; one document = entire depot state
     # ------------------------------------------------------------------
 
-    def get_latest_depot_snapshot(self, depot_id: str) -> dict | None:
+    async def get_latest_depot_snapshot(self, depot_id: str) -> dict | None:
         """Return the most recently inserted snapshot for a depot."""
-        return self._db["depot_snapshots"].find_one(
+        return await self._db["depot_snapshots"].find_one(
             {"depot_id": depot_id},
             sort=[("recorded_at", DESCENDING)],
         )
 
-    def insert_depot_snapshot(
+    async def insert_depot_snapshot(
         self,
         depot_id: str,
+        account_name: str,
         positions: list[dict],
     ) -> None:
         """
@@ -112,21 +117,22 @@ class MongoRepo:
           purchase_price: {value: str, unit: str}
         """
         now = _now()
-        self._db["depot_snapshots"].insert_one({
+        await self._db["depot_snapshots"].insert_one({
             "depot_id": depot_id,
+            "account_name": account_name,
             "positions": positions,
             "recorded_at": now,
             "last_synced_at": now,
         })
 
-    def touch_depot_last_synced(self, depot_id: str) -> None:
+    async def touch_depot_last_synced(self, depot_id: str) -> None:
         """Update last_synced_at on the latest snapshot without inserting a new one."""
-        doc = self._db["depot_snapshots"].find_one(
+        doc = await self._db["depot_snapshots"].find_one(
             {"depot_id": depot_id},
             sort=[("recorded_at", DESCENDING)],
         )
         if doc:
-            self._db["depot_snapshots"].update_one(
+            await self._db["depot_snapshots"].update_one(
                 {"_id": doc["_id"]},
                 {"$set": {"last_synced_at": _now()}},
             )
@@ -135,18 +141,19 @@ class MongoRepo:
     # transactions — insert-only, keyed by transaction_id
     # ------------------------------------------------------------------
 
-    def transaction_exists(self, transaction_id: str) -> bool:
+    async def transaction_exists(self, transaction_id: str) -> bool:
         return (
-            self._db["transactions"].count_documents(
+            await self._db["transactions"].count_documents(
                 {"transaction_id": transaction_id}, limit=1
             )
             > 0
         )
 
-    def insert_transaction(
+    async def insert_transaction(
         self,
         transaction_id: str,
         depot_id: str,
+        account_name: str,
         wkn: str | None,
         booking_date: date | None,
         transaction_type: str | None,
@@ -155,11 +162,12 @@ class MongoRepo:
         execution_price: Decimal | None,
         price_unit: str | None,
     ) -> None:
-        if self.transaction_exists(transaction_id):
+        if await self.transaction_exists(transaction_id):
             return
-        self._db["transactions"].insert_one({
+        await self._db["transactions"].insert_one({
             "transaction_id": transaction_id,
             "depot_id": depot_id,
+            "account_name": account_name,
             "wkn": wkn,
             "booking_date": _date_to_datetime(booking_date),
             "transaction_type": transaction_type,

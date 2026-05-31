@@ -92,8 +92,13 @@ async def main():
     example_suppress_httpx()  # Recommended: cleaner output
 
     # Use the client
-    client = await ComdirectClient.create()
-    print(f"\nClient ready! ID: {client.client_id}\n")
+    from comdirect_api.settings import settings
+    name, account = next(iter(settings.accounts.items()))
+    client = await ComdirectClient.create(
+        zugangsnummer=account.zugangsnummer.get_secret_value(),
+        pin=account.pin.get_secret_value(),
+    )
+    print(f"\nClient ready! ID: {client.client_id} (account: {name})\n")
 
     # Get account balances
     balances = await client.get_account_balances()

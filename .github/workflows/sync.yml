@@ -2,11 +2,16 @@ name: Comdirect Sync
 
 on:
   workflow_dispatch:
+    inputs:
+      accounts:
+        description: "Accounts to sync (comma-separated, e.g. DEPOT11,DEPOT22). Leave blank to sync all."
+        required: false
+        default: ""
 
 jobs:
   sync:
     runs-on: ubuntu-latest
-    timeout-minutes: 10     # Comdirect TAN must be approved within this window
+    timeout-minutes: 30     # 4 accounts × ~5 min per TAN approval
 
     steps:
       - uses: actions/checkout@v4
@@ -23,8 +28,14 @@ jobs:
         env:
           CLIENT_ID: ${{ secrets.CLIENT_ID }}
           CLIENT_SECRET: ${{ secrets.CLIENT_SECRET }}
-          ZUGANGSNUMMER: ${{ secrets.ZUGANGSNUMMER }}
-          PIN: ${{ secrets.PIN }}
+          ACCOUNTS__DEPOT11__ZUGANGSNUMMER: ${{ secrets.ACCOUNTS__DEPOT11__ZUGANGSNUMMER }}
+          ACCOUNTS__DEPOT11__PIN: ${{ secrets.ACCOUNTS__DEPOT11__PIN }}
+          ACCOUNTS__DEPOT12__ZUGANGSNUMMER: ${{ secrets.ACCOUNTS__DEPOT12__ZUGANGSNUMMER }}
+          ACCOUNTS__DEPOT12__PIN: ${{ secrets.ACCOUNTS__DEPOT12__PIN }}
+          ACCOUNTS__DEPOT21__ZUGANGSNUMMER: ${{ secrets.ACCOUNTS__DEPOT21__ZUGANGSNUMMER }}
+          ACCOUNTS__DEPOT21__PIN: ${{ secrets.ACCOUNTS__DEPOT21__PIN }}
+          ACCOUNTS__DEPOT22__ZUGANGSNUMMER: ${{ secrets.ACCOUNTS__DEPOT22__ZUGANGSNUMMER }}
+          ACCOUNTS__DEPOT22__PIN: ${{ secrets.ACCOUNTS__DEPOT22__PIN }}
           MONGODB_CONNECTION_STRING: ${{ secrets.MONGODB_CONNECTION_STRING }}
           MONGODB_DATABASE: finance
-        run: uv run python -m functions.sync.run
+        run: uv run python -m functions.sync.run --accounts "${{ inputs.accounts }}"

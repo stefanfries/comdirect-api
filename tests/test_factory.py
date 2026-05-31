@@ -1,6 +1,6 @@
 """Tests for factory method and initialization."""
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -27,47 +27,19 @@ async def test_create_factory_method_with_explicit_credentials():
 
 
 @pytest.mark.asyncio
-async def test_create_factory_uses_settings_as_fallback():
-    """Test factory method falls back to settings when credentials not provided."""
-    mock_settings = MagicMock()
-    mock_settings.client_id.get_secret_value.return_value = "env_client_id"
-    mock_settings.client_secret.get_secret_value.return_value = "env_client_secret"
-    mock_settings.zugangsnummer.get_secret_value.return_value = "env_user"
-    mock_settings.pin.get_secret_value.return_value = "env_pin"
-
-    with patch("comdirect_api.settings.settings", mock_settings), patch.object(
-        ComdirectClient, "_initialize", new_callable=AsyncMock
-    ):
-        client = await ComdirectClient.create()
-
-        assert client.client_id == "env_client_id"
-        assert client.client_secret == "env_client_secret"
-        assert client.zugangsnummer == "env_user"
-        assert client.pin == "env_pin"
+async def test_create_factory_raises_without_credentials():
+    """Test factory method raises ValueError when zugangsnummer/pin not provided."""
+    with patch.object(ComdirectClient, "_initialize", new_callable=AsyncMock):
+        with pytest.raises(ValueError, match="zugangsnummer and pin must be provided"):
+            await ComdirectClient.create()
 
 
 @pytest.mark.asyncio
-async def test_create_factory_partial_credentials():
-    """Test factory method with some explicit and some from settings."""
-    mock_settings = MagicMock()
-    mock_settings.client_id.get_secret_value.return_value = "env_client_id"
-    mock_settings.client_secret.get_secret_value.return_value = "env_client_secret"
-    mock_settings.zugangsnummer.get_secret_value.return_value = "env_user"
-    mock_settings.pin.get_secret_value.return_value = "env_pin"
-
-    with patch("comdirect_api.settings.settings", mock_settings), patch.object(
-        ComdirectClient, "_initialize", new_callable=AsyncMock
-    ):
-        client = await ComdirectClient.create(
-            client_id="custom_id", zugangsnummer="custom_user"
-        )
-
-        # Explicit values used
-        assert client.client_id == "custom_id"
-        assert client.zugangsnummer == "custom_user"
-        # Fallback to settings
-        assert client.client_secret == "env_client_secret"
-        assert client.pin == "env_pin"
+async def test_create_factory_partial_credentials_raises():
+    """Test factory method raises ValueError when only one of zugangsnummer/pin is provided."""
+    with patch.object(ComdirectClient, "_initialize", new_callable=AsyncMock):
+        with pytest.raises(ValueError, match="zugangsnummer and pin must be provided"):
+            await ComdirectClient.create(zugangsnummer="custom_user")
 
 
 @pytest.mark.asyncio

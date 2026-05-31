@@ -1,5 +1,6 @@
 """Azure HTTP-triggered Function — Comdirect sync entry point."""
 
+import asyncio
 import json
 import logging
 
@@ -39,9 +40,26 @@ async def comdirect_sync(req: func.HttpRequest) -> func.HttpResponse:
     logger.info("Sync triggered")
 
     try:
-        client = await ComdirectClient.create()
-        service = SyncService(client, _repo)
-        result = await service.run_full_sync()
+        await _repo.initialize()
+
+        # Sequential authentication — one push TAN approval per account
+        clients: dict[str, ComdirectClient] = {}
+        for name, account in settings.accounts.items():
+            logger.info("Authenticating %s...", name)
+            client = await ComdirectClient.create(
+                zugangsnummer=account.zugangsnummer.get_secret_value(),
+                pin=account.pin.get_secret_value(),
+            )
+            clients[name] = client
+
+        # Parallel sync across all authenticated clients
+        tasks = [
+            SyncService(client, _repo, account_name=name).run_full_sync()
+            for name, client in clients.items()
+        ]
+        results_list = await asyncio.gather(*tasks)
+        result = dict(zip(clients.keys(), results_list))
+
     except Exception as exc:
         logger.exception("Sync failed: %s", exc)
         return func.HttpResponse(

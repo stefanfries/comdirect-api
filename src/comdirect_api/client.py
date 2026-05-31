@@ -107,30 +107,33 @@ class ComdirectClient:
         Args:
             client_id: OAuth client ID (defaults to settings.client_id)
             client_secret: OAuth client secret (defaults to settings.client_secret)
-            zugangsnummer: Account login number (defaults to settings.zugangsnummer)
-            pin: Account PIN (defaults to settings.pin)
+            zugangsnummer: Account login number — must be provided explicitly.
+            pin: Account PIN — must be provided explicitly.
 
         Returns:
             Fully authenticated ComdirectClient ready for API calls.
 
         Example:
-            >>> client = await ComdirectClient.create()
+            >>> client = await ComdirectClient.create(zugangsnummer="...", pin="...")
             >>> balances = await client.get_account_balances()
         """
         from .settings import settings
 
-        # Use provided credentials or fall back to settings
         _client_id = client_id or settings.client_id.get_secret_value()
         _client_secret = client_secret or settings.client_secret.get_secret_value()
-        _zugangsnummer = zugangsnummer or settings.zugangsnummer.get_secret_value()
-        _pin = pin or settings.pin.get_secret_value()
+
+        if not zugangsnummer or not pin:
+            raise ValueError(
+                "zugangsnummer and pin must be provided explicitly. "
+                "Use settings.accounts['NAME'].zugangsnummer.get_secret_value()."
+            )
 
         # Create instance
         instance = cls(
             client_id=_client_id,
             client_secret=_client_secret,
-            zugangsnummer=_zugangsnummer,
-            pin=_pin,
+            zugangsnummer=zugangsnummer,
+            pin=pin,
         )
 
         # Run complete authentication flow

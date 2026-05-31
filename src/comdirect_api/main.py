@@ -2,6 +2,7 @@ import asyncio
 import logging
 import re
 import sys
+from decimal import Decimal
 
 from .client import ComdirectClient
 
@@ -33,11 +34,14 @@ def format_remittance_info(remittance_info: str | None) -> str:
     return remittance_info.strip()[:100]
 
 
-async def main():
-    """Example script to demonstrate ComdirectClient usage."""
-
-    client = await ComdirectClient.create()
-    print(f"Client ready! ID: {client.client_id}\n")
+async def run_account(
+    account_name: str, client: ComdirectClient, display_name: str | None = None
+) -> None:
+    """Run full demo display + portfolio summary for one authenticated client."""
+    label = f"{account_name} — {display_name}" if display_name else account_name
+    print(f"\n{'='*70}")
+    print(f"  Account: {label}  (client ID: {client.client_id})")
+    print(f"{'='*70}")
 
     # ========== BANKING FEATURES ==========
 
@@ -219,8 +223,6 @@ async def main():
 
     # ========== PORTFOLIO SUMMARY TABLE ==========
 
-    from decimal import Decimal
-
     col_name  = 26
     col_ident = 33
     col_value = 16
@@ -241,32 +243,49 @@ async def main():
     total = Decimal(0)
     table_rows = []
 
-    for ab in account_balances.values:
-        name  = ab.account.account_type.text
-        iban  = format_iban(ab.account.iban)
-        value = ab.balance_eur.value
-        total += value
-        table_rows.append((name, iban, value))
+    if account_balances:
+        for ab in account_balances.values:
+            product_name = ab.account.account_type.text
+            iban = format_iban(ab.account.iban)
+            value = ab.balance_eur.value
+            total += value
+            table_rows.append((product_name, iban, value))
 
-    for depot in account_depots.values:
-        positions = await client.get_depot_positions(depot_id=depot.depot_id)
-        depot_total = sum(
-            Decimal(str(pos.current_value.value))
-            for pos in positions.values
-            if pos.current_value and pos.current_value.value is not None
+    if account_depots:
+        for depot in account_depots.values:
+            depot_positions = await client.get_depot_positions(depot_id=depot.depot_id)
+            depot_total = sum(
+                Decimal(str(pos.current_value.value))
+                for pos in depot_positions.values
+                if pos.current_value and pos.current_value.value is not None
+            )
+            total += depot_total
+            table_rows.append(("Depot", depot.depot_display_id, depot_total))
+
+    if table_rows:
+        summary_label = f"{account_name} — {display_name}" if display_name else account_name
+        print(f"\n--- Portfolio Summary: {summary_label} ---")
+        print(top)
+        print(header)
+        print(mid)
+        for product_name, ident, value in table_rows:
+            print(row(product_name, ident, value))
+        print(mid)
+        print(row("Total", "", total))
+        print(bot)
+
+
+async def main() -> None:
+    """Authenticate and display portfolio summary for every configured account."""
+    from .settings import settings
+
+    for account_name, account in settings.accounts.items():
+        print(f"\nAuthenticating {account_name} — approve push TAN on your phone...")
+        client = await ComdirectClient.create(
+            zugangsnummer=account.zugangsnummer.get_secret_value(),
+            pin=account.pin.get_secret_value(),
         )
-        total += depot_total
-        table_rows.append(("Depot", depot.depot_display_id, depot_total))
-
-    print("\n--- Portfolio Summary ---")
-    print(top)
-    print(header)
-    print(mid)
-    for name, ident, value in table_rows:
-        print(row(name, ident, value))
-    print(mid)
-    print(row("Total", "", total))
-    print(bot)
+        await run_account(account_name, client, display_name=account.display_name)
 
 
 if __name__ == "__main__":

@@ -23,9 +23,10 @@ class SyncService:
     - transactions      : insert-only, idempotent (skipped if transaction_id exists).
     """
 
-    def __init__(self, client: ComdirectClient, repo: MongoRepo) -> None:
+    def __init__(self, client: ComdirectClient, repo: MongoRepo, account_name: str) -> None:
         self._client = client
         self._repo = repo
+        self._account_name = account_name
 
     async def sync_account_balances(self) -> dict:
         """Fetch all account balances. Insert snapshot on change, touch timestamp otherwise."""
@@ -39,15 +40,16 @@ class SyncService:
                 continue
 
             new_value = ab.balance.value if ab.balance else None
-            latest = self._repo.get_latest_balance(account_id)
+            latest = await self._repo.get_latest_balance(account_id)
 
             if latest and latest.get("balance", {}).get("value") == str(new_value):
-                self._repo.touch_balance_last_synced(account_id)
+                await self._repo.touch_balance_last_synced(account_id)
                 touched += 1
                 continue
 
-            self._repo.insert_balance(
+            await self._repo.insert_balance(
                 account_id=account_id,
+                account_name=self._account_name,
                 iban=ab.account.iban if ab.account else None,
                 account_type=(
                     ab.account.account_type.text
@@ -84,7 +86,7 @@ class SyncService:
                 current[pos.position_id] = str(qty) if qty is not None else "None"
 
         # Compare against latest snapshot fingerprint
-        latest = self._repo.get_latest_depot_snapshot(depot_id)
+        latest = await self._repo.get_latest_depot_snapshot(depot_id)
         if latest:
             previous: dict[str, str] = {
                 p["position_id"]: p.get("quantity", {}).get("value", "None")
@@ -95,7 +97,7 @@ class SyncService:
             changed = True  # no snapshot yet
 
         if not changed:
-            self._repo.touch_depot_last_synced(depot_id)
+            await self._repo.touch_depot_last_synced(depot_id)
             logger.info("Depot %s unchanged — touched last_synced_at", depot_id)
             return {"inserted": 0, "touched": 1}
 
@@ -139,7 +141,11 @@ class SyncService:
                 },
             })
 
-        self._repo.insert_depot_snapshot(depot_id=depot_id, positions=snapshot_positions)
+        await self._repo.insert_depot_snapshot(
+            depot_id=depot_id,
+            account_name=self._account_name,
+            positions=snapshot_positions,
+        )
         logger.info(
             "Depot %s snapshot inserted — %d positions",
             depot_id, len(snapshot_positions),
@@ -159,13 +165,14 @@ class SyncService:
         for txn in txns.values:
             if not txn.transaction_id:
                 continue
-            if self._repo.transaction_exists(txn.transaction_id):
+            if await self._repo.transaction_exists(txn.transaction_id):
                 skipped += 1
                 continue
 
-            self._repo.insert_transaction(
+            await self._repo.insert_transaction(
                 transaction_id=txn.transaction_id,
                 depot_id=depot_id,
+                account_name=self._account_name,
                 wkn=(
                     txn.instrument.wkn
                     if txn.instrument and isinstance(txn.instrument, dict) is False

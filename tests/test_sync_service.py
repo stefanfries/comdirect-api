@@ -84,17 +84,18 @@ def _transaction(
 async def test_sync_balances_new_account_inserts():
     """First sync for an account — no existing doc — should insert."""
     client = AsyncMock()
-    repo = MagicMock()
+    repo = AsyncMock()
 
     ab = _account_balance("ACC1", Decimal("100.00"))
     client.get_account_balances.return_value = MagicMock(values=[ab])
     repo.get_latest_balance.return_value = None  # no existing doc
 
-    service = SyncService(client, repo)
+    service = SyncService(client, repo, account_name="TEST")
     result = await service.sync_account_balances()
 
     repo.insert_balance.assert_called_once_with(
         account_id="ACC1",
+        account_name="TEST",
         iban="DE00",
         account_type="Girokonto",
         value=Decimal("100.00"),
@@ -108,13 +109,13 @@ async def test_sync_balances_new_account_inserts():
 async def test_sync_balances_unchanged_touches():
     """Balance unchanged — should only touch last_synced_at, not insert."""
     client = AsyncMock()
-    repo = MagicMock()
+    repo = AsyncMock()
 
     ab = _account_balance("ACC1", Decimal("100.00"))
     client.get_account_balances.return_value = MagicMock(values=[ab])
     repo.get_latest_balance.return_value = {"balance": {"value": "100.00"}}
 
-    service = SyncService(client, repo)
+    service = SyncService(client, repo, account_name="TEST")
     result = await service.sync_account_balances()
 
     repo.insert_balance.assert_not_called()
@@ -126,13 +127,13 @@ async def test_sync_balances_unchanged_touches():
 async def test_sync_balances_changed_inserts():
     """Balance changed — should insert a new snapshot."""
     client = AsyncMock()
-    repo = MagicMock()
+    repo = AsyncMock()
 
     ab = _account_balance("ACC1", Decimal("200.00"))
     client.get_account_balances.return_value = MagicMock(values=[ab])
     repo.get_latest_balance.return_value = {"balance": {"value": "100.00"}}
 
-    service = SyncService(client, repo)
+    service = SyncService(client, repo, account_name="TEST")
     result = await service.sync_account_balances()
 
     repo.insert_balance.assert_called_once()
@@ -144,7 +145,7 @@ async def test_sync_balances_changed_inserts():
 async def test_sync_balances_multiple_accounts():
     """Multiple accounts: one changed, one unchanged."""
     client = AsyncMock()
-    repo = MagicMock()
+    repo = AsyncMock()
 
     ab1 = _account_balance("ACC1", Decimal("100.00"))
     ab2 = _account_balance("ACC2", Decimal("500.00"))
@@ -155,7 +156,7 @@ async def test_sync_balances_multiple_accounts():
         else None
     )
 
-    service = SyncService(client, repo)
+    service = SyncService(client, repo, account_name="TEST")
     result = await service.sync_account_balances()
 
     assert result == {"inserted": 1, "touched": 1}
@@ -169,14 +170,14 @@ async def test_sync_balances_multiple_accounts():
 async def test_sync_positions_no_snapshot_inserts():
     """No existing snapshot — should insert a new one with all position fields."""
     client = AsyncMock()
-    repo = MagicMock()
+    repo = AsyncMock()
 
     pos = _position("POS1", "A1B2C3", Decimal("1000"), Decimal("5000.00"),
                     current_price=Decimal("5.00"))
     client.get_depot_positions.return_value = MagicMock(values=[pos])
     repo.get_latest_depot_snapshot.return_value = None
 
-    service = SyncService(client, repo)
+    service = SyncService(client, repo, account_name="TEST")
     result = await service.sync_depot_positions("DEPOT1")
 
     repo.insert_depot_snapshot.assert_called_once()
@@ -186,6 +187,7 @@ async def test_sync_positions_no_snapshot_inserts():
     # Verify snapshot contents include current_price alongside current_value
     call_kwargs = repo.insert_depot_snapshot.call_args.kwargs
     assert call_kwargs["depot_id"] == "DEPOT1"
+    assert call_kwargs["account_name"] == "TEST"
     positions = call_kwargs["positions"]
     assert len(positions) == 1
     p = positions[0]
@@ -202,7 +204,7 @@ async def test_sync_positions_no_snapshot_inserts():
 async def test_sync_positions_unchanged_touches():
     """Depot composition unchanged — should only touch last_synced_at."""
     client = AsyncMock()
-    repo = MagicMock()
+    repo = AsyncMock()
 
     pos = _position("POS1", "A1B2C3", Decimal("1000"), Decimal("6000.00"))
     client.get_depot_positions.return_value = MagicMock(values=[pos])
@@ -210,7 +212,7 @@ async def test_sync_positions_unchanged_touches():
         "positions": [{"position_id": "POS1", "quantity": {"value": "1000"}}]
     }
 
-    service = SyncService(client, repo)
+    service = SyncService(client, repo, account_name="TEST")
     result = await service.sync_depot_positions("DEPOT1")
 
     repo.insert_depot_snapshot.assert_not_called()
@@ -222,7 +224,7 @@ async def test_sync_positions_unchanged_touches():
 async def test_sync_positions_quantity_changed_inserts():
     """Quantity changed — should insert a new snapshot."""
     client = AsyncMock()
-    repo = MagicMock()
+    repo = AsyncMock()
 
     pos = _position("POS1", "A1B2C3", Decimal("2000"), Decimal("10000.00"))
     client.get_depot_positions.return_value = MagicMock(values=[pos])
@@ -230,7 +232,7 @@ async def test_sync_positions_quantity_changed_inserts():
         "positions": [{"position_id": "POS1", "quantity": {"value": "1000"}}]
     }
 
-    service = SyncService(client, repo)
+    service = SyncService(client, repo, account_name="TEST")
     result = await service.sync_depot_positions("DEPOT1")
 
     repo.insert_depot_snapshot.assert_called_once()
@@ -242,7 +244,7 @@ async def test_sync_positions_quantity_changed_inserts():
 async def test_sync_positions_new_position_inserts():
     """New position appeared — should insert a new snapshot."""
     client = AsyncMock()
-    repo = MagicMock()
+    repo = AsyncMock()
 
     pos1 = _position("POS1", "A1B2C3", Decimal("1000"), Decimal("5000.00"))
     pos2 = _position("POS2", "X9Y8Z7", Decimal("500"), Decimal("2000.00"))
@@ -251,7 +253,7 @@ async def test_sync_positions_new_position_inserts():
         "positions": [{"position_id": "POS1", "quantity": {"value": "1000"}}]
     }
 
-    service = SyncService(client, repo)
+    service = SyncService(client, repo, account_name="TEST")
     result = await service.sync_depot_positions("DEPOT1")
 
     repo.insert_depot_snapshot.assert_called_once()
@@ -262,7 +264,7 @@ async def test_sync_positions_new_position_inserts():
 async def test_sync_positions_sold_position_inserts():
     """Position sold (gone from API response) — should insert a new snapshot."""
     client = AsyncMock()
-    repo = MagicMock()
+    repo = AsyncMock()
 
     # API now returns only POS1; POS2 was previously in snapshot (fully sold)
     pos1 = _position("POS1", "A1B2C3", Decimal("1000"), Decimal("5000.00"))
@@ -274,7 +276,7 @@ async def test_sync_positions_sold_position_inserts():
         ]
     }
 
-    service = SyncService(client, repo)
+    service = SyncService(client, repo, account_name="TEST")
     result = await service.sync_depot_positions("DEPOT1")
 
     repo.insert_depot_snapshot.assert_called_once()
@@ -289,13 +291,13 @@ async def test_sync_positions_sold_position_inserts():
 async def test_sync_transactions_new_inserts():
     """New transaction not yet in DB — should insert."""
     client = AsyncMock()
-    repo = MagicMock()
+    repo = AsyncMock()
 
     txn = _transaction("TXN1")
     client.get_depot_transactions.return_value = MagicMock(values=[txn])
     repo.transaction_exists.return_value = False
 
-    service = SyncService(client, repo)
+    service = SyncService(client, repo, account_name="TEST")
     result = await service.sync_depot_transactions("DEPOT1")
 
     repo.insert_transaction.assert_called_once()
@@ -306,13 +308,13 @@ async def test_sync_transactions_new_inserts():
 async def test_sync_transactions_existing_skipped():
     """Transaction already in DB — should skip."""
     client = AsyncMock()
-    repo = MagicMock()
+    repo = AsyncMock()
 
     txn = _transaction("TXN1")
     client.get_depot_transactions.return_value = MagicMock(values=[txn])
     repo.transaction_exists.return_value = True
 
-    service = SyncService(client, repo)
+    service = SyncService(client, repo, account_name="TEST")
     result = await service.sync_depot_transactions("DEPOT1")
 
     repo.insert_transaction.assert_not_called()
@@ -323,14 +325,14 @@ async def test_sync_transactions_existing_skipped():
 async def test_sync_transactions_mixed():
     """One new, one existing — insert one, skip one."""
     client = AsyncMock()
-    repo = MagicMock()
+    repo = AsyncMock()
 
     txn1 = _transaction("TXN1")
     txn2 = _transaction("TXN2")
     client.get_depot_transactions.return_value = MagicMock(values=[txn1, txn2])
     repo.transaction_exists.side_effect = lambda txn_id: txn_id == "TXN2"
 
-    service = SyncService(client, repo)
+    service = SyncService(client, repo, account_name="TEST")
     result = await service.sync_depot_transactions("DEPOT1")
 
     assert result == {"inserted": 1, "skipped": 1}
