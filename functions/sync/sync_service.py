@@ -181,9 +181,22 @@ class SyncService:
         self, depot_id: str, min_booking_date: str = "-90d"
     ) -> dict:
         """Insert any new depot transactions (idempotent)."""
-        txns = await self._client.get_depot_transactions(
-            depot_id=depot_id, min_booking_date=min_booking_date
-        )
+        for attempt in range(4):
+            try:
+                txns = await self._client.get_depot_transactions(
+                    depot_id=depot_id, min_booking_date=min_booking_date
+                )
+                break
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code == 429 and attempt < 3:
+                    wait = 2 ** (attempt + 1)
+                    logger.warning(
+                        "Rate limited fetching depot %s transactions, retrying in %ds (attempt %d/3)…",
+                        depot_id, wait, attempt + 1,
+                    )
+                    await asyncio.sleep(wait)
+                else:
+                    raise
         inserted = 0
         skipped = 0
 
