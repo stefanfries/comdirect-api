@@ -1,6 +1,9 @@
 """Sync orchestration logic — testable independently of the Azure Function trigger."""
 
+import asyncio
 import logging
+
+import httpx
 
 from comdirect_api.client import ComdirectClient
 from functions.sync.mongo_repo import MongoRepo
@@ -82,9 +85,22 @@ class SyncService:
           - a position is gone (fully sold)
         Otherwise only touch last_synced_at on the latest snapshot.
         """
-        positions = await self._client.get_depot_positions(
-            depot_id=depot_id, with_attr="instrument"
-        )
+        for attempt in range(4):
+            try:
+                positions = await self._client.get_depot_positions(
+                    depot_id=depot_id, with_attr="instrument"
+                )
+                break
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code == 429 and attempt < 3:
+                    wait = 2 ** (attempt + 1)  # 2, 4, 8 seconds
+                    logger.warning(
+                        "Rate limited fetching depot %s positions, retrying in %ds (attempt %d/3)…",
+                        depot_id, wait, attempt + 1,
+                    )
+                    await asyncio.sleep(wait)
+                else:
+                    raise
 
         # Build current state as {position_id: quantity_str}
         current: dict[str, str] = {}
