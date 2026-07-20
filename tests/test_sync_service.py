@@ -198,7 +198,93 @@ async def test_sync_positions_no_snapshot_inserts():
     assert p["current_price"]["unit"] == "EUR"
     assert p["current_price"]["price_datetime"] == "2026-03-15T22:00:00"
     assert p["current_value"] == {"value": "5000.00", "unit": "EUR"}
-    assert p["purchase_price"] == {"value": "1.00", "unit": "EUR"}
+    assert p["average_purchase_price"] == {"value": "1.00", "unit": "EUR"}
+    assert p["held_since_date"] is None
+    assert p["purchase_price_at_entry"] == {"value": None, "unit": None}
+
+
+@pytest.mark.asyncio
+async def test_sync_positions_derives_held_since_and_entry_buy_price():
+    """Derive held_since_date and purchase_price_at_entry from transaction history."""
+    client = AsyncMock()
+    repo = AsyncMock()
+
+    pos = _position("POS1", "A1B2C3", Decimal("50"), Decimal("5000.00"))
+    client.get_depot_positions.return_value = MagicMock(values=[pos])
+    repo.get_latest_depot_snapshot.return_value = None
+
+    buy_old = _transaction(
+        "TXN1",
+        wkn="A1B2C3",
+        quantity=Decimal("30"),
+        execution_price=Decimal("10.00"),
+        booking_date=date(2026, 1, 10),
+        transaction_type="BUY",
+    )
+    sell = _transaction(
+        "TXN2",
+        wkn="A1B2C3",
+        quantity=Decimal("30"),
+        execution_price=Decimal("11.00"),
+        booking_date=date(2026, 2, 10),
+        transaction_type="SELL",
+    )
+    buy_entry = _transaction(
+        "TXN3",
+        wkn="A1B2C3",
+        quantity=Decimal("50"),
+        execution_price=Decimal("12.34"),
+        booking_date=date(2026, 3, 10),
+        transaction_type="BUY",
+    )
+    depot_transactions = MagicMock(values=[buy_old, sell, buy_entry])
+
+    service = SyncService(client, repo, account_name="TEST")
+    result = await service.sync_depot_positions(
+        "DEPOT1",
+        depot_transactions=depot_transactions,
+    )
+
+    assert result == {"inserted": 1, "touched": 0}
+
+    call_kwargs = repo.insert_depot_snapshot.call_args.kwargs
+    p = call_kwargs["positions"][0]
+    assert p["held_since_date"] == "2026-03-10"
+    assert p["purchase_price_at_entry"] == {"value": "12.34", "unit": "EUR"}
+
+
+@pytest.mark.asyncio
+async def test_sync_positions_entry_unknown_without_sufficient_history():
+    """If lookback does not reach the entry, leave held_since/entry price empty."""
+    client = AsyncMock()
+    repo = AsyncMock()
+
+    pos = _position("POS1", "A1B2C3", Decimal("100"), Decimal("5000.00"))
+    client.get_depot_positions.return_value = MagicMock(values=[pos])
+    repo.get_latest_depot_snapshot.return_value = None
+
+    # Only a partial sell in the available window; no identifiable entry BUY.
+    sell = _transaction(
+        "TXN2",
+        wkn="A1B2C3",
+        quantity=Decimal("20"),
+        execution_price=Decimal("11.00"),
+        booking_date=date(2026, 2, 10),
+        transaction_type="SELL",
+    )
+    depot_transactions = MagicMock(values=[sell])
+
+    service = SyncService(client, repo, account_name="TEST")
+    result = await service.sync_depot_positions(
+        "DEPOT1",
+        depot_transactions=depot_transactions,
+    )
+
+    assert result == {"inserted": 1, "touched": 0}
+    call_kwargs = repo.insert_depot_snapshot.call_args.kwargs
+    p = call_kwargs["positions"][0]
+    assert p["held_since_date"] is None
+    assert p["purchase_price_at_entry"] == {"value": None, "unit": None}
 
 
 @pytest.mark.asyncio

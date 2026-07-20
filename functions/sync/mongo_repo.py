@@ -117,7 +117,8 @@ class MongoRepo:
           position_id, wkn, isin, instrument_name,
           quantity  : {value: str, unit: str},
           current_value : {value: str, unit: str},
-          purchase_price: {value: str, unit: str}
+                    average_purchase_price: {value: str, unit: str},
+                    purchase_price_at_entry: {value: str, unit: str}
         """
         now = _now()
         await self._db["depot_snapshots"].insert_one({

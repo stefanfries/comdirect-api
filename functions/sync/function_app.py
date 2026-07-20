@@ -59,6 +59,7 @@ async def comdirect_sync(req: func.HttpRequest) -> func.HttpResponse:
                 _repo,
                 account_name=name,
                 display_name=settings.accounts[name].display_name,
+                depot_transactions_lookback=settings.depot_transactions_lookback,
             ).run_full_sync()
             for name, client in clients.items()
         ]

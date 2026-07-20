@@ -13,6 +13,12 @@ class SyncSettings(ClientSettings):
 
     mongodb_connection_string: SecretStr
     mongodb_database: str = "finance"
+    depot_transactions_lookback_days: int = 3650
+
+    @property
+    def depot_transactions_lookback(self) -> str:
+        """Relative lookback window for depot transaction fetches (e.g. -3650d)."""
+        return f"-{self.depot_transactions_lookback_days}d"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

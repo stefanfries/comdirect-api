@@ -34,7 +34,7 @@ comdirect_api/
 │       ├── mongo_repo.py       # MongoDB Atlas read/write
 │       ├── settings.py         # SyncSettings (extends ClientSettings)
 │       └── function_app.py     # Legacy Azure Function entry point (unused)
-├── tests/                      # Test suite (115 tests, 80% coverage)
+├── tests/                      # Test suite (117 tests, 80% coverage)
 │   ├── __init__.py
 │   ├── conftest.py             # Shared test fixtures
 │   ├── test_auth.py            # Authentication tests
@@ -397,6 +397,7 @@ class ClientSettings(BaseSettings):
 class SyncSettings(ClientSettings):
     mongodb_connection_string: SecretStr
     mongodb_database: str = "finance"
+    depot_transactions_lookback_days: int = 3650
 ```
 
 The account key (e.g. `depot11`) becomes the `account_name` stored in every MongoDB document. Each account requires its own Comdirect login credentials; a single `CLIENT_ID`/`CLIENT_SECRET` covers all accounts.
@@ -504,6 +505,7 @@ Approve each push TAN on your phone within ~60 seconds of triggering the workflo
 | `ACCOUNTS__DEPOT11__DISPLAY_NAME` | Human-readable label (optional, stored in MongoDB) |
 | `ACCOUNTS__DEPOT12__*` … | Repeat pattern for each additional account |
 | `MONGODB_CONNECTION_STRING` | Atlas connection string |
+| `DEPOT_TRANSACTIONS_LOOKBACK_DAYS` | Relative lookback window for depot transactions (default: 3650 days) |
 
 ### Component Overview
 
@@ -512,7 +514,7 @@ Approve each push TAN on your phone within ~60 seconds of triggering the workflo
 | `run.py` | GitHub Actions entrypoint; `asyncio.run(main())`; creates `ComdirectClient` + `MongoRepo`, calls `SyncService.run_full_sync()`, exits 1 on failure |
 | `sync_service.py` | Orchestration logic; fully testable; depends on `ComdirectClient` and `MongoRepo` abstractions |
 | `mongo_repo.py` | All MongoDB Atlas reads and writes; no Comdirect knowledge |
-| `settings.py` | `SyncSettings(ClientSettings)` — adds `mongodb_connection_string` and `mongodb_database` |
+| `settings.py` | `SyncSettings(ClientSettings)` — adds `mongodb_connection_string`, `mongodb_database`, and `depot_transactions_lookback_days` |
 | `function_app.py` | Legacy Azure Function entry point — kept for reference, not actively used |
 
 ### Module-Level Singleton (Connection Pool)
@@ -564,7 +566,9 @@ _repo = MongoRepo(
       "quantity": { "value": "50", "unit": "XXC" },
       "current_price": { "value": "86.42", "unit": "EUR", "price_datetime": "2026-03-15T21:58:00" },
       "current_value": { "value": "4321.00", "unit": "EUR" },
-      "purchase_price": { "value": "80.00", "unit": "EUR" }
+    "average_purchase_price": { "value": "80.00", "unit": "EUR" },
+    "held_since_date": "2026-03-10",
+    "purchase_price_at_entry": { "value": "78.50", "unit": "EUR" }
     }
   ],
   "recorded_at": "<UTC datetime — immutable, when this composition first appeared>",
@@ -577,6 +581,9 @@ _repo = MongoRepo(
 - When composition is unchanged, only `last_synced_at` is touched (heartbeat).
 - Latest depot state = `find_one({"depot_id": ...}, sort=[("recorded_at", -1)])`.
 - `current_price` is the market price **per unit** with its timestamp; `current_value` is the total position value (qty × price).
+- `average_purchase_price` is persisted from Comdirect `DepotPosition.purchase_price` as the primary average cost basis field.
+- `purchase_price_at_entry` is derived from the first BUY/TRANSFER_IN of the **current holding period** (after the position last returned to zero or below).
+- `held_since_date` is derived from transaction history and may be `null` if the configured lookback does not reach the current entry transaction.
 
 #### `transactions` — Insert-only, idempotent
 
@@ -598,6 +605,7 @@ _repo = MongoRepo(
 - Transactions are never modified after insertion.
 - `transaction_exists(transaction_id)` prevents duplicate inserts.
 - `booking_date` is stored as a native UTC `datetime` (midnight) for MongoDB date indexing.
+- During full sync, depot transactions are fetched once per depot and reused for both snapshot enrichment and transaction persistence.
 
 ### Helper Functions (`mongo_repo.py`)
 
@@ -777,6 +785,15 @@ git push
 
 ## Changelog
 
+### July 2026
+
+- **Breaking schema change (2026-07-20)**: Removed legacy `depot_snapshots.positions[]` fields `purchase_price` and `buy_price_at_entry`. Canonical fields are now `average_purchase_price` and `purchase_price_at_entry`.
+- **Entry/average purchase price fields in snapshots**: `depot_snapshots.positions[]` includes `average_purchase_price`, `purchase_price_at_entry`, and `held_since_date` as canonical fields.
+- **Current-holding entry logic**: `purchase_price_at_entry` is derived from the first BUY/TRANSFER_IN of the current holding period (after last full close), not simply the oldest historical BUY.
+- **Configurable depot transaction history window**: Added `DEPOT_TRANSACTIONS_LOOKBACK_DAYS` (default `3650`) in `SyncSettings` to control how far back transactions are loaded for entry-date/entry-price derivation.
+- **Transaction fetch optimization**: Full sync now fetches depot transactions once per depot and reuses the payload for both position enrichment and transaction inserts.
+- **117 tests passing** across the full suite.
+
 ### May 2026
 
 - **Multi-account `display_name` support**: `AccountSettings` now has an optional `display_name: str | None` field. Set via `ACCOUNTS__<NAME>__DISPLAY_NAME` in `.env` or GitHub Secrets. Stored in every MongoDB document (`account_balances`, `depot_snapshots`, `transactions`) alongside `account_name`.
@@ -820,4 +837,4 @@ git push
 
 ---
 
-**Last Updated**: March 15, 2026
+**Last Updated**: July 20, 2026

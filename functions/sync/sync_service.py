@@ -2,6 +2,8 @@
 
 import asyncio
 import logging
+from datetime import date, datetime
+from decimal import Decimal
 
 import httpx
 
@@ -32,11 +34,151 @@ class SyncService:
         repo: MongoRepo,
         account_name: str,
         display_name: str | None = None,
+        depot_transactions_lookback: str = "-3650d",
     ) -> None:
         self._client = client
         self._repo = repo
         self._account_name = account_name
         self._display_name = display_name
+        self._depot_transactions_lookback = depot_transactions_lookback
+
+    @staticmethod
+    def _extract_instrument_identifiers(txn) -> tuple[str | None, str | None]:
+        """Return (wkn, isin) from transaction instrument payload/object."""
+        instrument = getattr(txn, "instrument", None)
+        if not instrument:
+            return (None, None)
+        if isinstance(instrument, dict):
+            return (instrument.get("wkn"), instrument.get("isin"))
+        return (getattr(instrument, "wkn", None), getattr(instrument, "isin", None))
+
+    @staticmethod
+    def _booking_date_key(txn) -> tuple[date, str]:
+        """Sorting key for transactions: booking date ascending, then transaction id."""
+        value = getattr(txn, "booking_date", None)
+        if isinstance(value, datetime):
+            d = value.date()
+        elif isinstance(value, date):
+            d = value
+        else:
+            d = date.min
+        return d, getattr(txn, "transaction_id", "") or ""
+
+    @staticmethod
+    def _signed_quantity(txn) -> Decimal | None:
+        """Return signed quantity for a depot transaction."""
+        quantity = getattr(txn, "quantity", None)
+        value = getattr(quantity, "value", None) if quantity else None
+        if value is None:
+            return None
+
+        txn_type = getattr(txn, "transaction_type", None)
+        if txn_type in {"BUY", "TRANSFER_IN"}:
+            return Decimal(value)
+        if txn_type in {"SELL", "TRANSFER_OUT"}:
+            return Decimal(value) * Decimal("-1")
+        return None
+
+    def _derive_entry_metadata(self, position, transactions) -> dict[str, dict | str | None]:
+        """
+        Derive held_since_date and purchase_price_at_entry for current holding.
+
+        The algorithm walks matching transactions backwards from the current quantity
+        and finds the BUY/TRANSFER_IN event where the previous balance was <= 0.
+        """
+        quantity = getattr(position, "quantity", None)
+        current_qty_raw = getattr(quantity, "value", None) if quantity else None
+        if current_qty_raw is None:
+            return {
+                "held_since_date": None,
+                "purchase_price_at_entry": {"value": None, "unit": None},
+            }
+
+        current_qty = Decimal(current_qty_raw)
+        if current_qty <= 0:
+            return {
+                "held_since_date": None,
+                "purchase_price_at_entry": {"value": None, "unit": None},
+            }
+
+        pos_wkn = getattr(position, "wkn", None)
+        pos_isin = getattr(getattr(position, "instrument", None), "isin", None)
+
+        matching = []
+        for txn in transactions:
+            signed_qty = self._signed_quantity(txn)
+            if signed_qty is None:
+                continue
+
+            txn_wkn, txn_isin = self._extract_instrument_identifiers(txn)
+            if pos_isin and txn_isin == pos_isin:
+                matching.append(txn)
+                continue
+            if pos_wkn and txn_wkn == pos_wkn:
+                matching.append(txn)
+
+        if not matching:
+            return {
+                "held_since_date": None,
+                "purchase_price_at_entry": {"value": None, "unit": None},
+            }
+
+        balance_after = current_qty
+        for txn in sorted(matching, key=self._booking_date_key, reverse=True):
+            signed_qty = self._signed_quantity(txn)
+            if signed_qty is None:
+                continue
+
+            balance_before = balance_after - signed_qty
+            if signed_qty > 0 and balance_before <= 0 < balance_after:
+                execution_price = getattr(txn, "execution_price", None)
+                booking_date = getattr(txn, "booking_date", None)
+                held_since_date = booking_date.isoformat() if booking_date else None
+                return {
+                    "held_since_date": held_since_date,
+                    "purchase_price_at_entry": {
+                        "value": (
+                            str(execution_price.value)
+                            if execution_price and execution_price.value is not None
+                            else None
+                        ),
+                        "unit": execution_price.unit if execution_price else None,
+                    },
+                }
+            balance_after = balance_before
+
+        return {
+            "held_since_date": None,
+            "purchase_price_at_entry": {"value": None, "unit": None},
+        }
+
+    async def _fetch_depot_transactions_with_retry(
+        self,
+        depot_id: str,
+        min_booking_date: str,
+    ):
+        """Fetch depot transactions with retry on 429."""
+        for attempt in range(4):
+            try:
+                return await self._client.get_depot_transactions(
+                    depot_id=depot_id,
+                    min_booking_date=min_booking_date,
+                )
+            except httpx.HTTPStatusError as exc:
+                if exc.response.status_code == 429 and attempt < 3:
+                    wait = 2 ** (attempt + 1)
+                    logger.warning(
+                        (
+                            "Rate limited fetching depot %s transactions, "
+                            "retrying in %ds (attempt %d/3)…"
+                        ),
+                        depot_id,
+                        wait,
+                        attempt + 1,
+                    )
+                    await asyncio.sleep(wait)
+                else:
+                    raise
 
     async def sync_account_balances(self) -> dict:
         """Fetch all account balances. Insert snapshot on change, touch timestamp otherwise."""
@@ -75,7 +217,7 @@ class SyncService:
 
         return {"inserted": inserted, "touched": touched}
 
-    async def sync_depot_positions(self, depot_id: str) -> dict:
+    async def sync_depot_positions(self, depot_id: str, depot_transactions=None) -> dict:
         """
         Snapshot the entire depot.
 
@@ -136,11 +278,14 @@ class SyncService:
             """Return unit or None from an AmountValue-like object."""
             return amount_value.unit if amount_value else None
 
+        tx_values = depot_transactions.values if depot_transactions else []
+
         snapshot_positions = []
         for pos in positions.values:
             if not pos.position_id:
                 continue
             cp = pos.current_price  # shorthand to keep lines short
+            entry_metadata = self._derive_entry_metadata(pos, tx_values)
             snapshot_positions.append({
                 "position_id": pos.position_id,
                 "wkn": pos.wkn,
@@ -159,10 +304,16 @@ class SyncService:
                     "value": _v(pos.current_value),
                     "unit": _u(pos.current_value),
                 },
-                "purchase_price": {
+                # Explicit average cost basis from Comdirect position payload.
+                "average_purchase_price": {
                     "value": _v(pos.purchase_price),
                     "unit": _u(pos.purchase_price),
                 },
+                "held_since_date": entry_metadata["held_since_date"],
+                # First BUY price of the current holding period.
+                "purchase_price_at_entry": entry_metadata[
+                    "purchase_price_at_entry"
+                ],
             })
 
         await self._repo.insert_depot_snapshot(
@@ -178,25 +329,17 @@ class SyncService:
         return {"inserted": 1, "touched": 0}
 
     async def sync_depot_transactions(
-        self, depot_id: str, min_booking_date: str = "-90d"
+        self,
+        depot_id: str,
+        min_booking_date: str | None = None,
+        depot_transactions=None,
     ) -> dict:
         """Insert any new depot transactions (idempotent)."""
-        for attempt in range(4):
-            try:
-                txns = await self._client.get_depot_transactions(
-                    depot_id=depot_id, min_booking_date=min_booking_date
-                )
-                break
-            except httpx.HTTPStatusError as exc:
-                if exc.response.status_code == 429 and attempt < 3:
-                    wait = 2 ** (attempt + 1)
-                    logger.warning(
-                        "Rate limited fetching depot %s transactions, retrying in %ds (attempt %d/3)…",  # noqa: E501
-                        depot_id, wait, attempt + 1,
-                    )
-                    await asyncio.sleep(wait)
-                else:
-                    raise
+        booking_date_filter = min_booking_date or self._depot_transactions_lookback
+        txns = depot_transactions or await self._fetch_depot_transactions_with_retry(
+            depot_id=depot_id,
+            min_booking_date=booking_date_filter,
+        )
         inserted = 0
         skipped = 0
 
@@ -212,11 +355,7 @@ class SyncService:
                 depot_id=depot_id,
                 account_name=self._account_name,
                 display_name=self._display_name,
-                wkn=(
-                    txn.instrument.wkn
-                    if txn.instrument and isinstance(txn.instrument, dict) is False
-                    else None
-                ),
+                wkn=self._extract_instrument_identifiers(txn)[0],
                 booking_date=txn.booking_date,
                 transaction_type=txn.transaction_type,
                 quantity=txn.quantity.value if txn.quantity else None,
@@ -241,8 +380,18 @@ class SyncService:
         depots = await self._client.get_account_depots()
         for depot in depots.values:
             depot_id = depot.depot_id
-            positions_result = await self.sync_depot_positions(depot_id)
-            transactions_result = await self.sync_depot_transactions(depot_id)
+            depot_transactions = await self._fetch_depot_transactions_with_retry(
+                depot_id=depot_id,
+                min_booking_date=self._depot_transactions_lookback,
+            )
+            positions_result = await self.sync_depot_positions(
+                depot_id,
+                depot_transactions=depot_transactions,
+            )
+            transactions_result = await self.sync_depot_transactions(
+                depot_id,
+                depot_transactions=depot_transactions,
+            )
             result["depots"].append({
                 "depot_id": depot_id,
                 "positions": positions_result,
