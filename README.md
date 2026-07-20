@@ -75,7 +75,7 @@ MONGODB_DATABASE = finance
 
 # Optional: how far back depot transactions are loaded for
 # held_since_date / purchase_price_at_entry derivation
-DEPOT_TRANSACTIONS_LOOKBACK_DAYS = 3650
+DEPOT_TRANSACTIONS_LOOKBACK_DAYS = 365
 ```
 
 > **Important**: Never commit your `.env` file to version control!
@@ -170,7 +170,7 @@ The workflow installs dependencies, runs `python -m functions.sync.run --account
 | `ACCOUNTS__DEPOT11__DISPLAY_NAME` | Human-readable label (optional) |
 | `ACCOUNTS__DEPOT12__*` | Repeat for each additional account |
 | `MONGODB_CONNECTION_STRING` | Atlas connection string |
-| `DEPOT_TRANSACTIONS_LOOKBACK_DAYS` | Optional lookback for depot transaction enrichment (default: 3650) |
+| `DEPOT_TRANSACTIONS_LOOKBACK_DAYS` | Optional lookback window in days; converted to earliest booking date (`YYYY-MM-DD`) for depot transactions (default: 365) |
 
 The optional **`accounts` input** accepts a comma-separated list (e.g. `DEPOT11,DEPOT22`, case-insensitive) to sync only specific accounts. Leave blank to sync all.
 

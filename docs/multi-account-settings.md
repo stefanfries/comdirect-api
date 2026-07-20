@@ -68,7 +68,7 @@ settings = ClientSettings()
 class SyncSettings(ClientSettings):
     mongodb_connection_string: SecretStr
     mongodb_database: str = "finance"
-    depot_transactions_lookback_days: int = 3650
+    depot_transactions_lookback_days: int = 365
 
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -116,7 +116,7 @@ Set one group of secrets per account under **Settings → Secrets and variables 
 ACCOUNTS__DEPOT11__ZUGANGSNUMMER
 ACCOUNTS__DEPOT11__PIN
 ACCOUNTS__DEPOT11__DISPLAY_NAME   ← optional but recommended
-DEPOT_TRANSACTIONS_LOOKBACK_DAYS  ← optional (default: 3650)
+DEPOT_TRANSACTIONS_LOOKBACK_DAYS  ← optional (default: 365)
 ```
 
 Repeat the pattern for each additional account. The `workflow_dispatch` trigger exposes an optional `accounts` input field to sync specific accounts (e.g. `DEPOT11,DEPOT22`).
@@ -125,5 +125,5 @@ Repeat the pattern for each additional account. The `workflow_dispatch` trigger 
 
 - Each account triggers a separate push TAN approval on the Comdirect mobile app.
 - `display_name` is stored in every document in `account_balances`, `depot_snapshots`, and `transactions` collections, making it easy to filter/display data per account in dashboards.
-- Set `DEPOT_TRANSACTIONS_LOOKBACK_DAYS` (default: `3650`) to tune how reliably entry date/entry price can be derived for long-held positions.
+- Set `DEPOT_TRANSACTIONS_LOOKBACK_DAYS` (default: `365`) to tune how reliably entry date/entry price can be derived for long-held positions.
 - Idempotent transaction inserts skip documents with the same `transaction_id` — if `display_name` is added later, run a one-off backfill using `update_many({"account_name": ..., "display_name": None}, {"$set": {"display_name": ...}})`.

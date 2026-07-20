@@ -397,7 +397,7 @@ class ClientSettings(BaseSettings):
 class SyncSettings(ClientSettings):
     mongodb_connection_string: SecretStr
     mongodb_database: str = "finance"
-    depot_transactions_lookback_days: int = 3650
+    depot_transactions_lookback_days: int = 365
 ```
 
 The account key (e.g. `depot11`) becomes the `account_name` stored in every MongoDB document. Each account requires its own Comdirect login credentials; a single `CLIENT_ID`/`CLIENT_SECRET` covers all accounts.
@@ -505,7 +505,7 @@ Approve each push TAN on your phone within ~60 seconds of triggering the workflo
 | `ACCOUNTS__DEPOT11__DISPLAY_NAME` | Human-readable label (optional, stored in MongoDB) |
 | `ACCOUNTS__DEPOT12__*` … | Repeat pattern for each additional account |
 | `MONGODB_CONNECTION_STRING` | Atlas connection string |
-| `DEPOT_TRANSACTIONS_LOOKBACK_DAYS` | Relative lookback window for depot transactions (default: 3650 days) |
+| `DEPOT_TRANSACTIONS_LOOKBACK_DAYS` | Lookback window in days for depot transactions; translated to earliest booking date (`YYYY-MM-DD`) (default: 365 days) |
 
 ### Component Overview
 
@@ -790,7 +790,7 @@ git push
 - **Breaking schema change (2026-07-20)**: Removed legacy `depot_snapshots.positions[]` fields `purchase_price` and `buy_price_at_entry`. Canonical fields are now `average_purchase_price` and `purchase_price_at_entry`.
 - **Entry/average purchase price fields in snapshots**: `depot_snapshots.positions[]` includes `average_purchase_price`, `purchase_price_at_entry`, and `held_since_date` as canonical fields.
 - **Current-holding entry logic**: `purchase_price_at_entry` is derived from the first BUY/TRANSFER_IN of the current holding period (after last full close), not simply the oldest historical BUY.
-- **Configurable depot transaction history window**: Added `DEPOT_TRANSACTIONS_LOOKBACK_DAYS` (default `3650`) in `SyncSettings` to control how far back transactions are loaded for entry-date/entry-price derivation.
+- **Configurable depot transaction history window**: Added `DEPOT_TRANSACTIONS_LOOKBACK_DAYS` (default `365`) in `SyncSettings` to control how far back transactions are loaded for entry-date/entry-price derivation; value is converted to an earliest booking date (`YYYY-MM-DD`) for API requests.
 - **Transaction fetch optimization**: Full sync now fetches depot transactions once per depot and reuses the payload for both position enrichment and transaction inserts.
 - **117 tests passing** across the full suite.
 

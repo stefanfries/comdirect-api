@@ -1,3 +1,5 @@
+from datetime import date, timedelta
+
 from pydantic import SecretStr
 from pydantic_settings import SettingsConfigDict
 
@@ -13,12 +15,13 @@ class SyncSettings(ClientSettings):
 
     mongodb_connection_string: SecretStr
     mongodb_database: str = "finance"
-    depot_transactions_lookback_days: int = 3650
+    depot_transactions_lookback_days: int = 365
 
     @property
     def depot_transactions_lookback(self) -> str:
-        """Relative lookback window for depot transaction fetches (e.g. -3650d)."""
-        return f"-{self.depot_transactions_lookback_days}d"
+        """Earliest booking date (YYYY-MM-DD) for depot transaction fetches."""
+        earliest = date.today() - timedelta(days=self.depot_transactions_lookback_days)
+        return earliest.isoformat()
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
