@@ -308,6 +308,48 @@ async def test_sync_positions_unchanged_touches():
 
 
 @pytest.mark.asyncio
+async def test_sync_positions_inserts_when_held_since_backfills_late():
+    """Late-arriving transactions should trigger a new snapshot with held_since_date."""
+    client = AsyncMock()
+    repo = AsyncMock()
+
+    pos = _position("POS1", "A1B2C3", Decimal("50"), Decimal("5000.00"))
+    client.get_depot_positions.return_value = MagicMock(values=[pos])
+    repo.get_latest_depot_snapshot.return_value = {
+        "positions": [
+            {
+                "position_id": "POS1",
+                "quantity": {"value": "50", "unit": "XXX"},
+                "held_since_date": None,
+                "purchase_price_at_entry": {"value": None, "unit": None},
+            }
+        ]
+    }
+
+    buy_entry = _transaction(
+        "TXN3",
+        wkn="A1B2C3",
+        quantity=Decimal("50"),
+        execution_price=Decimal("12.34"),
+        booking_date=date(2026, 3, 10),
+        transaction_type="BUY",
+    )
+    depot_transactions = MagicMock(values=[buy_entry])
+
+    service = SyncService(client, repo, account_name="TEST")
+    result = await service.sync_depot_positions(
+        "DEPOT1",
+        depot_transactions=depot_transactions,
+    )
+
+    assert result == {"inserted": 1, "touched": 0}
+    call_kwargs = repo.insert_depot_snapshot.call_args.kwargs
+    p = call_kwargs["positions"][0]
+    assert p["held_since_date"] == "2026-03-10"
+    assert p["purchase_price_at_entry"] == {"value": "12.34", "unit": "EUR"}
+
+
+@pytest.mark.asyncio
 async def test_sync_positions_quantity_changed_inserts():
     """Quantity changed — should insert a new snapshot."""
     client = AsyncMock()

@@ -222,7 +222,8 @@ class SyncService:
         Snapshot the entire depot.
 
         Insert a new snapshot document when the composition changes:
-          - any position's quantity is different from the latest snapshot
+                    - any position's quantity is different from the latest snapshot
+                    - held-since / entry price metadata changes after late-arriving transactions
           - a new position appears
           - a position is gone (fully sold)
         Otherwise only touch last_synced_at on the latest snapshot.
@@ -243,29 +244,6 @@ class SyncService:
                     await asyncio.sleep(wait)
                 else:
                     raise
-
-        # Build current state as {position_id: quantity_str}
-        current: dict[str, str] = {}
-        for pos in positions.values:
-            if pos.position_id:
-                qty = pos.quantity.value if pos.quantity else None
-                current[pos.position_id] = str(qty) if qty is not None else "None"
-
-        # Compare against latest snapshot fingerprint
-        latest = await self._repo.get_latest_depot_snapshot(depot_id)
-        if latest:
-            previous: dict[str, str] = {
-                p["position_id"]: p.get("quantity", {}).get("value", "None")
-                for p in latest.get("positions", [])
-            }
-            changed = current != previous
-        else:
-            changed = True  # no snapshot yet
-
-        if not changed:
-            await self._repo.touch_depot_last_synced(depot_id)
-            logger.info("Depot %s unchanged — touched last_synced_at", depot_id)
-            return {"inserted": 0, "touched": 1}
 
         # Build full position list for the new snapshot
         def _v(amount_value) -> str | None:
@@ -315,6 +293,41 @@ class SyncService:
                     "purchase_price_at_entry"
                 ],
             })
+
+        # Compare the current enriched snapshot against the latest stored snapshot.
+        # We only treat entry metadata as change drivers here; market price changes
+        # are already captured in current_price and would create too many snapshots.
+        latest = await self._repo.get_latest_depot_snapshot(depot_id)
+        if latest:
+            previous_by_id = {
+                p["position_id"]: p for p in latest.get("positions", []) if p.get("position_id")
+            }
+            current_by_id = {
+                p["position_id"]: p for p in snapshot_positions if p.get("position_id")
+            }
+
+            def _entry_signature(position: dict) -> tuple:
+                return (
+                    position.get("quantity", {}).get("value"),
+                    position.get("held_since_date"),
+                    position.get("purchase_price_at_entry", {}).get("value"),
+                    position.get("purchase_price_at_entry", {}).get("unit"),
+                )
+
+            changed = set(current_by_id) != set(previous_by_id)
+            if not changed:
+                changed = any(
+                    _entry_signature(current_by_id[position_id])
+                    != _entry_signature(previous_by_id[position_id])
+                    for position_id in current_by_id
+                )
+        else:
+            changed = True  # no snapshot yet
+
+        if not changed:
+            await self._repo.touch_depot_last_synced(depot_id)
+            logger.info("Depot %s unchanged — touched last_synced_at", depot_id)
+            return {"inserted": 0, "touched": 1}
 
         await self._repo.insert_depot_snapshot(
             depot_id=depot_id,

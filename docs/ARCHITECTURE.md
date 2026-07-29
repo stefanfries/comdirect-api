@@ -578,7 +578,8 @@ _repo = MongoRepo(
 
 - One document captures **all positions** of the depot at a point in time.
 - A **new snapshot is inserted** when the composition changes: any quantity change, new position, or a position fully sold/closed.
-- When composition is unchanged, only `last_synced_at` is touched (heartbeat).
+- A later sync can also insert a new snapshot when `held_since_date` / `purchase_price_at_entry` becomes available from newly visible transaction history, even if quantity is unchanged.
+- When neither composition nor entry metadata changed, only `last_synced_at` is touched (heartbeat).
 - Latest depot state = `find_one({"depot_id": ...}, sort=[("recorded_at", -1)])`.
 - `current_price` is the market price **per unit** with its timestamp; `current_value` is the total position value (qty × price).
 - `average_purchase_price` is persisted from Comdirect `DepotPosition.purchase_price` as the primary average cost basis field.

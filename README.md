@@ -178,6 +178,7 @@ The sync:
 
 - **Snapshots account balances** — inserts a new document on value change; updates `last_synced_at` heartbeat otherwise
 - **Snapshots the entire depot** — inserts a new document (all positions) when composition changes (qty change, new position, sold position); updates `last_synced_at` heartbeat otherwise. Each position includes `current_price` (per-unit), `current_value` (total), `average_purchase_price`, `held_since_date`, and `purchase_price_at_entry`.
+- **Backfills held-since on later syncs** — if Comdirect exposes the BUY/TRANSFER_IN transaction only on the next business day, a later depot sync can insert a new snapshot to populate `held_since_date` and `purchase_price_at_entry` even when quantity is unchanged.
 - **Inserts depot transactions** — idempotent (skipped if already stored)
 
 > **Breaking schema change (effective 2026-07-20):**
