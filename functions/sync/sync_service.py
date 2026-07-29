@@ -222,8 +222,8 @@ class SyncService:
         Snapshot the entire depot.
 
         Insert a new snapshot document when the composition changes:
-                    - any position's quantity is different from the latest snapshot
-                    - held-since / entry price metadata changes after late-arriving transactions
+          - any position's quantity is different from the latest snapshot
+          - held-since / entry price metadata changes after late-arriving transactions
           - a new position appears
           - a position is gone (fully sold)
         Otherwise only touch last_synced_at on the latest snapshot.
