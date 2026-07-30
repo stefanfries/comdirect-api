@@ -179,6 +179,7 @@ The sync:
 - **Snapshots account balances** — inserts a new document on value change; updates `last_synced_at` heartbeat otherwise
 - **Snapshots the entire depot** — inserts a new document (all positions) when composition changes (qty change, new position, sold position); updates `last_synced_at` heartbeat otherwise. Each position includes `current_price` (per-unit), `current_value` (total), `average_purchase_price`, `held_since_date`, and `purchase_price_at_entry`.
 - **Backfills held-since on later syncs** — if Comdirect exposes the BUY/TRANSFER_IN transaction only on the next business day, a later depot sync can insert a new snapshot to populate `held_since_date` and `purchase_price_at_entry` even when quantity is unchanged.
+- **Preserves existing held-since metadata** — if a later sync cannot derive entry metadata from the current transaction window, previously stored `held_since_date` and `purchase_price_at_entry` are retained when quantity is unchanged (no metadata regression to null).
 - **Inserts depot transactions** — idempotent (skipped if already stored)
 
 > **Breaking schema change (effective 2026-07-20):**
@@ -187,6 +188,10 @@ The sync:
 > If you have historical data using the old fields, start with a fresh database or run a one-off migration.
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#sync-function-architecture) for the full schema and design.
+
+### Recent Changes
+
+- **2026-07-30 — Depot metadata preservation fix**: Depot sync no longer overwrites existing `held_since_date` / `purchase_price_at_entry` with null when the latest transaction window cannot derive entry metadata and quantity is unchanged.
 
 ## 📚 API Coverage
 

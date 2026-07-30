@@ -579,12 +579,13 @@ _repo = MongoRepo(
 - One document captures **all positions** of the depot at a point in time.
 - A **new snapshot is inserted** when the composition changes: any quantity change, new position, or a position fully sold/closed.
 - A later sync can also insert a new snapshot when `held_since_date` / `purchase_price_at_entry` becomes available from newly visible transaction history, even if quantity is unchanged.
+- If a later sync cannot derive entry metadata (for example due to lookback/window gaps), existing `held_since_date` / `purchase_price_at_entry` are preserved from the latest snapshot when quantity is unchanged.
 - When neither composition nor entry metadata changed, only `last_synced_at` is touched (heartbeat).
 - Latest depot state = `find_one({"depot_id": ...}, sort=[("recorded_at", -1)])`.
 - `current_price` is the market price **per unit** with its timestamp; `current_value` is the total position value (qty × price).
 - `average_purchase_price` is persisted from Comdirect `DepotPosition.purchase_price` as the primary average cost basis field.
 - `purchase_price_at_entry` is derived from the first BUY/TRANSFER_IN of the **current holding period** (after the position last returned to zero or below).
-- `held_since_date` is derived from transaction history and may be `null` if the configured lookback does not reach the current entry transaction.
+- `held_since_date` is derived from transaction history and may be `null` if the configured lookback does not reach the current entry transaction; however, an already stored value is retained when quantity is unchanged.
 
 #### `transactions` — Insert-only, idempotent
 
@@ -623,6 +624,10 @@ _repo = MongoRepo(
 | `account_balances` | Insert new snapshot | Touch `last_synced_at` only |
 | `depot_snapshots` | Insert new full-depot snapshot | Touch `last_synced_at` only |
 | `transactions` | Insert | Skip (idempotent) |
+
+### Recent Changes
+
+- **2026-07-30 — Depot metadata preservation fix**: Depot sync no longer overwrites existing `held_since_date` / `purchase_price_at_entry` with null when the latest transaction window cannot derive entry metadata and quantity is unchanged.
 
 ### Installing Sync Dependencies
 

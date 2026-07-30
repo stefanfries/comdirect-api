@@ -306,6 +306,40 @@ class SyncService:
                 p["position_id"]: p for p in snapshot_positions if p.get("position_id")
             }
 
+            # Preserve known entry metadata if current derivation is missing and
+            # the position quantity is unchanged (typically a lookback/window gap).
+            for position_id, current in current_by_id.items():
+                previous = previous_by_id.get(position_id)
+                if not previous:
+                    continue
+
+                if (
+                    current.get("quantity", {}).get("value")
+                    != previous.get("quantity", {}).get("value")
+                ):
+                    continue
+
+                if (
+                    current.get("held_since_date") is None
+                    and previous.get("held_since_date") is not None
+                ):
+                    current["held_since_date"] = previous.get("held_since_date")
+
+                current_entry = current.get("purchase_price_at_entry", {})
+                previous_entry = previous.get("purchase_price_at_entry", {})
+                if (
+                    current_entry.get("value") is None
+                    and current_entry.get("unit") is None
+                    and (
+                        previous_entry.get("value") is not None
+                        or previous_entry.get("unit") is not None
+                    )
+                ):
+                    current["purchase_price_at_entry"] = {
+                        "value": previous_entry.get("value"),
+                        "unit": previous_entry.get("unit"),
+                    }
+
             def _entry_signature(position: dict) -> tuple:
                 return (
                     position.get("quantity", {}).get("value"),

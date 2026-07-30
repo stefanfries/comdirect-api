@@ -350,6 +350,47 @@ async def test_sync_positions_inserts_when_held_since_backfills_late():
 
 
 @pytest.mark.asyncio
+async def test_sync_positions_preserves_entry_metadata_when_derivation_missing():
+    """Do not regress held_since/entry price to null when quantity is unchanged."""
+    client = AsyncMock()
+    repo = AsyncMock()
+
+    pos = _position("POS1", "A1B2C3", Decimal("50"), Decimal("5000.00"))
+    client.get_depot_positions.return_value = MagicMock(values=[pos])
+    repo.get_latest_depot_snapshot.return_value = {
+        "positions": [
+            {
+                "position_id": "POS1",
+                "quantity": {"value": "50", "unit": "XXX"},
+                "held_since_date": "2026-03-10",
+                "purchase_price_at_entry": {"value": "12.34", "unit": "EUR"},
+            }
+        ]
+    }
+
+    # Only non-entry history in window; derivation would otherwise return None.
+    sell = _transaction(
+        "TXN2",
+        wkn="A1B2C3",
+        quantity=Decimal("20"),
+        execution_price=Decimal("11.00"),
+        booking_date=date(2026, 7, 30),
+        transaction_type="SELL",
+    )
+    depot_transactions = MagicMock(values=[sell])
+
+    service = SyncService(client, repo, account_name="TEST")
+    result = await service.sync_depot_positions(
+        "DEPOT1",
+        depot_transactions=depot_transactions,
+    )
+
+    repo.insert_depot_snapshot.assert_not_called()
+    repo.touch_depot_last_synced.assert_called_once_with("DEPOT1")
+    assert result == {"inserted": 0, "touched": 1}
+
+
+@pytest.mark.asyncio
 async def test_sync_positions_quantity_changed_inserts():
     """Quantity changed — should insert a new snapshot."""
     client = AsyncMock()
