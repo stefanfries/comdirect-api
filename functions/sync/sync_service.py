@@ -28,6 +28,9 @@ class SyncService:
     - transactions      : insert-only, idempotent (skipped if transaction_id exists).
     """
 
+    # Largest paging-count the brokerage transactions endpoint accepts (1000 is rejected).
+    PAGE_SIZE = 500
+
     def __init__(
         self,
         client: ComdirectClient,
@@ -152,17 +155,52 @@ class SyncService:
             "purchase_price_at_entry": {"value": None, "unit": None},
         }
 
-    async def _fetch_depot_transactions_with_retry(
+    def _log_transactions(self, depot_id: str, min_booking_date: str, txns) -> None:
+        """Log what Comdirect actually delivered for a depot transactions request."""
+        values = getattr(txns, "values", []) or []
+        paging = getattr(txns, "paging", {}) or {}
+        dates = [t.booking_date for t in values if getattr(t, "booking_date", None)]
+        logger.info(
+            "Depot %s transactions: %d returned (paging=%s), min-bookingDate=%s, "
+            "booking_date range %s … %s",
+            depot_id,
+            len(values),
+            paging,
+            min_booking_date,
+            min(dates).isoformat() if dates else "n/a",
+            max(dates).isoformat() if dates else "n/a",
+        )
+        for txn in sorted(values, key=self._booking_date_key):
+            wkn, isin = self._extract_instrument_identifiers(txn)
+            logger.info(
+                "  txn %s | booking=%s business=%s settlement=%s | %s | "
+                "wkn=%s isin=%s | qty=%s | price=%s %s",
+                txn.transaction_id,
+                txn.booking_date,
+                getattr(txn, "business_date", None),
+                getattr(txn, "settlement_date", None),
+                txn.transaction_type,
+                wkn,
+                isin,
+                txn.quantity.value if txn.quantity else None,
+                txn.execution_price.value if txn.execution_price else None,
+                txn.execution_price.unit if txn.execution_price else None,
+            )
+
+    async def _fetch_depot_transactions_page(
         self,
         depot_id: str,
         min_booking_date: str,
+        paging_first: int,
     ):
-        """Fetch depot transactions with retry on 429."""
+        """Fetch one page of depot transactions with retry on 429."""
         for attempt in range(4):
             try:
                 return await self._client.get_depot_transactions(
                     depot_id=depot_id,
                     min_booking_date=min_booking_date,
+                    paging_first=paging_first,
+                    paging_count=self.PAGE_SIZE,
                 )
             except httpx.HTTPStatusError as exc:
                 if exc.response.status_code == 429 and attempt < 3:
@@ -179,6 +217,26 @@ class SyncService:
                     await asyncio.sleep(wait)
                 else:
                     raise
+
+    async def _fetch_depot_transactions_with_retry(
+        self,
+        depot_id: str,
+        min_booking_date: str,
+    ):
+        """Fetch all pages of depot transactions; the API caps a page at PAGE_SIZE."""
+        page = await self._fetch_depot_transactions_page(depot_id, min_booking_date, 0)
+        matches = (page.paging or {}).get("matches", len(page.values))
+
+        while len(page.values) < matches:
+            next_page = await self._fetch_depot_transactions_page(
+                depot_id, min_booking_date, len(page.values)
+            )
+            if not next_page.values:
+                break
+            page.values.extend(next_page.values)
+
+        self._log_transactions(depot_id, min_booking_date, page)
+        return page
 
     async def sync_account_balances(self) -> dict:
         """Fetch all account balances. Insert snapshot on change, touch timestamp otherwise."""

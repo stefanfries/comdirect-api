@@ -826,6 +826,8 @@ class ComdirectClient:
         wkn: str | None = None,
         instrument_id: str | None = None,
         min_booking_date: str = "-180d",
+        paging_first: int = 0,
+        paging_count: int | None = None,
     ) -> DepotTransactions:
         """
         Get transactions for a specific depot.
@@ -835,7 +837,10 @@ class ComdirectClient:
             isin: Optional filter by ISIN
             wkn: Optional filter by WKN
             instrument_id: Optional filter by instrument ID (UUID)
-            min_booking_date: Earliest booking date (YYYY-MM-DD or offset like "-180d")
+            min_booking_date: Earliest booking date (YYYY-MM-DD or offset like "-180d";
+                offsets beyond roughly a year are rejected — prefer explicit dates)
+            paging_first: Index of the first transaction returned
+            paging_count: Max transactions per page (API default 20, max ~500)
 
         Returns:
             DepotTransactions object with list of transactions
@@ -852,7 +857,13 @@ class ComdirectClient:
             url = f"{self.BASE_URL}/brokerage/v3/depots/{depot_id}/transactions"
             headers = self._request_headers(self.banking_access_token)
 
-            params = {"min-bookingDate": min_booking_date}
+            # paging-first/paging-count are undocumented for this endpoint but accepted.
+            params: dict[str, Any] = {
+                "min-bookingDate": min_booking_date,
+                "paging-first": paging_first,
+            }
+            if paging_count is not None:
+                params["paging-count"] = paging_count
             if isin:
                 params["isin"] = isin
             if wkn:
@@ -863,6 +874,13 @@ class ComdirectClient:
             response = await client.get(url=url, headers=headers, params=params)
             response.raise_for_status()
             transactions = response.json()
+            # Raw payload shows fields the Pydantic models drop (extra=ignore).
+            logger.debug(
+                "Raw depot transactions payload (depot=%s, params=%s): %s",
+                depot_id,
+                params,
+                json.dumps(transactions, ensure_ascii=False, indent=2),
+            )
             return DepotTransactions(**transactions)
 
     async def get_instrument(

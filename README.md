@@ -174,6 +174,23 @@ The workflow installs dependencies, runs `python -m functions.sync.run --account
 
 The optional **`accounts` input** accepts a comma-separated list (e.g. `DEPOT11,DEPOT22`, case-insensitive) to sync only specific accounts. Leave blank to sync all.
 
+#### Running the sync locally
+
+```bash
+uv run python -m functions.sync.run                          # all accounts
+uv run python -m functions.sync.run --accounts DEPOT11       # one account
+uv run python -m functions.sync.run --lookback-days 30       # override the history window
+uv run python -m functions.sync.run --debug                  # raw Comdirect JSON payloads
+```
+
+| Flag | Description |
+| ---- | ----------- |
+| `--accounts` | Comma-separated account names; omit to sync all |
+| `--lookback-days` | Overrides `DEPOT_TRANSACTIONS_LOOKBACK_DAYS` for this run |
+| `--debug` | DEBUG logging, including the unparsed depot transaction payloads and a per-transaction summary line |
+
+Each account requires its own push TAN approval; authentication runs sequentially, then the syncs run in parallel.
+
 The sync:
 
 - **Snapshots account balances** — inserts a new document on value change; updates `last_synced_at` heartbeat otherwise
@@ -181,6 +198,15 @@ The sync:
 - **Backfills held-since on later syncs** — if Comdirect exposes the BUY/TRANSFER_IN transaction only on the next business day, a later depot sync can insert a new snapshot to populate `held_since_date` and `purchase_price_at_entry` even when quantity is unchanged.
 - **Preserves existing held-since metadata** — if a later sync cannot derive entry metadata from the current transaction window, previously stored `held_since_date` and `purchase_price_at_entry` are retained when quantity is unchanged (no metadata regression to null).
 - **Inserts depot transactions** — idempotent (skipped if already stored)
+
+> **Depot transaction history limits.** The brokerage transactions endpoint returns only 20 records
+> per request by default; the sync pages through all of them via the undocumented `paging-first` /
+> `paging-count` parameters. Independently of that, Comdirect only serves roughly the last six months
+> of depot transactions — raising `DEPOT_TRANSACTIONS_LOOKBACK_DAYS` beyond that returns no extra
+> records. Positions bought before that horizon can never have `held_since_date` derived.
+>
+> Trades are booked at T+1 (`bookingDate = businessDate + 1`), so a freshly bought position has
+> `held_since_date: null` on the trade day and is populated by the next day's sync.
 
 > **Breaking schema change (effective 2026-07-20):**
 > `depot_snapshots.positions[]` no longer includes legacy fields `purchase_price` and `buy_price_at_entry`.
@@ -191,6 +217,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#sync-function-architecture) for 
 
 ### Recent Changes
 
+- **2026-08-30 — Depot transaction pagination**: `get_depot_transactions()` now accepts `paging_first` / `paging_count`, and the sync pages through the full result set instead of silently receiving only the 20 most recent transactions. This restores reliable `held_since_date` derivation for positions bought more than a few trades ago.
 - **2026-07-30 — Depot metadata preservation fix**: Depot sync no longer overwrites existing `held_since_date` / `purchase_price_at_entry` with null when the latest transaction window cannot derive entry metadata and quantity is unchanged.
 
 ## 📚 API Coverage

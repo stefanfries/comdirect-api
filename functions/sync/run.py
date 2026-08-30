@@ -15,6 +15,7 @@ import asyncio
 import json
 import logging
 import sys
+from datetime import date, timedelta
 
 from comdirect_api.client import ComdirectClient
 from functions.sync.mongo_repo import MongoRepo
@@ -29,8 +30,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def _parse_args() -> set[str] | None:
-    """Return the set of account names to sync, or None to sync all."""
+def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Comdirect → MongoDB Atlas sync")
     parser.add_argument(
         "--accounts",
@@ -38,14 +38,35 @@ def _parse_args() -> set[str] | None:
         help="Comma-separated account names to sync (e.g. DEPOT11,DEPOT22). "
              "Omit or leave blank to sync all configured accounts.",
     )
-    args = parser.parse_args()
-    if args.accounts.strip():
-        return {name.strip().lower() for name in args.accounts.split(",")}
-    return None  # all accounts
+    parser.add_argument(
+        "--lookback-days",
+        type=int,
+        default=None,
+        help="Override DEPOT_TRANSACTIONS_LOOKBACK_DAYS for this run.",
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable DEBUG logging, including raw Comdirect JSON payloads.",
+    )
+    return parser.parse_args()
 
 
 async def main() -> None:
-    selected = _parse_args()
+    args = _parse_args()
+    if args.debug:
+        logging.getLogger().setLevel(logging.DEBUG)
+
+    selected = (
+        {name.strip().lower() for name in args.accounts.split(",")}
+        if args.accounts.strip()
+        else None
+    )
+    lookback = (
+        (date.today() - timedelta(days=args.lookback_days)).isoformat()
+        if args.lookback_days is not None
+        else settings.depot_transactions_lookback
+    )
 
     repo = MongoRepo(
         connection_string=settings.mongodb_connection_string.get_secret_value(),
@@ -80,7 +101,7 @@ async def main() -> None:
                 repo,
                 account_name=name,
                 display_name=settings.accounts[name].display_name,
-                depot_transactions_lookback=settings.depot_transactions_lookback,
+                depot_transactions_lookback=lookback,
             ).run_full_sync()
             for name, client in clients.items()
         ]

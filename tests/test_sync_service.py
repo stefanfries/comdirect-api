@@ -464,7 +464,9 @@ async def test_sync_transactions_new_inserts():
     repo = AsyncMock()
 
     txn = _transaction("TXN1")
-    client.get_depot_transactions.return_value = MagicMock(values=[txn])
+    client.get_depot_transactions.return_value = MagicMock(
+        values=[txn], paging={"index": 0, "matches": 1}
+    )
     repo.transaction_exists.return_value = False
 
     service = SyncService(client, repo, account_name="TEST")
@@ -481,7 +483,9 @@ async def test_sync_transactions_existing_skipped():
     repo = AsyncMock()
 
     txn = _transaction("TXN1")
-    client.get_depot_transactions.return_value = MagicMock(values=[txn])
+    client.get_depot_transactions.return_value = MagicMock(
+        values=[txn], paging={"index": 0, "matches": 1}
+    )
     repo.transaction_exists.return_value = True
 
     service = SyncService(client, repo, account_name="TEST")
@@ -499,13 +503,32 @@ async def test_sync_transactions_mixed():
 
     txn1 = _transaction("TXN1")
     txn2 = _transaction("TXN2")
-    client.get_depot_transactions.return_value = MagicMock(values=[txn1, txn2])
+    client.get_depot_transactions.return_value = MagicMock(
+        values=[txn1, txn2], paging={"index": 0, "matches": 2}
+    )
     repo.transaction_exists.side_effect = lambda txn_id: txn_id == "TXN2"
 
     service = SyncService(client, repo, account_name="TEST")
     result = await service.sync_depot_transactions("DEPOT1")
 
     assert result == {"inserted": 1, "skipped": 1}
+
+
+@pytest.mark.asyncio
+async def test_fetch_depot_transactions_follows_paging():
+    """More matches than one page — all pages are fetched and merged."""
+    client = AsyncMock()
+    repo = AsyncMock()
+
+    page1 = MagicMock(values=[_transaction("TXN1")], paging={"index": 0, "matches": 2})
+    page2 = MagicMock(values=[_transaction("TXN2")], paging={"index": 1, "matches": 2})
+    client.get_depot_transactions.side_effect = [page1, page2]
+
+    service = SyncService(client, repo, account_name="TEST")
+    result = await service._fetch_depot_transactions_with_retry("DEPOT1", "2025-01-01")
+
+    assert [t.transaction_id for t in result.values] == ["TXN1", "TXN2"]
+    assert client.get_depot_transactions.call_args_list[1].kwargs["paging_first"] == 1
 
 
 # ---------------------------------------------------------------------------

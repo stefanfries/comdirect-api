@@ -505,7 +505,7 @@ Approve each push TAN on your phone within ~60 seconds of triggering the workflo
 | `ACCOUNTS__DEPOT11__DISPLAY_NAME` | Human-readable label (optional, stored in MongoDB) |
 | `ACCOUNTS__DEPOT12__*` … | Repeat pattern for each additional account |
 | `MONGODB_CONNECTION_STRING` | Atlas connection string |
-| `DEPOT_TRANSACTIONS_LOOKBACK_DAYS` | Lookback window in days for depot transactions; translated to earliest booking date (`YYYY-MM-DD`) (default: 365 days) |
+| `DEPOT_TRANSACTIONS_LOOKBACK_DAYS` | Lookback window in days for depot transactions; translated to earliest booking date (`YYYY-MM-DD`) (default: 365 days). Values beyond ~6 months have no effect — see *API Constraints* |
 
 ### Component Overview
 
@@ -676,6 +676,17 @@ class Paging(ComdirectBaseModel):
 
 Clients can request specific pages using query parameters or limit result count.
 
+### Depot transaction paging
+
+`GET /brokerage/v3/depots/{depotId}/transactions` is documented without paging parameters, but it
+accepts `paging-first` and `paging-count` and defaults to **20 records per page**. Unknown query
+parameters are ignored rather than rejected, so the truncation is silent — only `paging.matches`
+reveals it. `get_depot_transactions()` exposes both parameters and `SyncService` pages through the
+full set using `PAGE_SIZE = 500` (values of 1000+ return HTTP 422 `ERROR_VALIDATION_PAGING_INVALID`).
+
+`min-bookingDate` accepts `YYYY-MM-DD` or a short negative offset such as `-180d`; long offsets like
+`-3650d` are rejected with HTTP 422, so the sync always sends an explicit date.
+
 ## Integration Points
 
 ### External Dependencies
@@ -687,6 +698,8 @@ Clients can request specific pages using query parameters or limit result count.
 ### API Constraints
 
 - **Rate Limiting**: Comdirect enforces a rate limit on brokerage endpoints. The sync function retries 429 responses up to 3 times with exponential backoff (2s, 4s, 8s) for both `get_depot_positions` and `get_depot_transactions`.
+- **Depot transaction history**: Comdirect serves only about the last six months of depot transactions, regardless of `min-bookingDate`. Positions entered before that horizon cannot have `held_since_date` / `purchase_price_at_entry` derived, and no lookback setting changes this.
+- **T+1 booking**: Depot transactions are booked with `bookingDate = businessDate + 1`, and `settlementDate` is not populated for warrants. A position therefore appears in the depot one day before its transaction becomes visible, so entry metadata is filled in by the following sync.
 - **Session Duration**: ~30 minutes before token refresh required
 - **TAN Approval**: Requires physical mobile device access
 - **Scope Permissions**: Different tokens for session vs banking operations
@@ -790,6 +803,13 @@ git push
 - **httpx Documentation**: <https://www.python-httpx.org/>
 
 ## Changelog
+
+### August 2026
+
+- **Depot transaction pagination (2026-08-30)**: `get_depot_transactions()` gained `paging_first` / `paging_count`, and `SyncService` now pages through the full result set (`PAGE_SIZE = 500`). Previously every sync silently received only the 20 most recent transactions, so `held_since_date` and `purchase_price_at_entry` could not be derived for positions bought more than a few trades earlier.
+- **Sync diagnostics**: `--debug` and `--lookback-days` flags on `functions.sync.run`; depot transaction fetches log the returned count, `paging` object and booking-date range, plus one summary line per transaction. Raw JSON payloads are logged at DEBUG level in the client, which is the only way to see fields the Pydantic models drop.
+- **Documented API constraints**: ~6 month server-side depot transaction history, T+1 booking dates, unpopulated `settlementDate` for warrants, and rejection of long `min-bookingDate` offsets. See *API Constraints*.
+- **120 tests passing** across the full suite.
 
 ### July 2026
 
