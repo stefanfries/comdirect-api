@@ -199,6 +199,13 @@ The sync:
 - **Preserves existing held-since metadata** — if a later sync cannot derive entry metadata from the current transaction window, previously stored `held_since_date` and `purchase_price_at_entry` are retained when quantity is unchanged (no metadata regression to null).
 - **Inserts depot transactions** — idempotent (skipped if already stored)
 
+> **Breaking schema change (effective 2026-07-20):**
+> `depot_snapshots.positions[]` no longer includes legacy fields `purchase_price` and `buy_price_at_entry`.
+> Use `average_purchase_price` and `purchase_price_at_entry` instead.
+> If you have historical data using the old fields, start with a fresh database or run a one-off migration.
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#sync-function-architecture) for the full schema and design.
+
 > **Depot transaction history limits.** The brokerage transactions endpoint returns only 20 records
 > per request by default; the sync pages through all of them via the undocumented `paging-first` /
 > `paging-count` parameters. Independently of that, Comdirect only serves roughly the last six months
@@ -207,13 +214,6 @@ The sync:
 >
 > Trades are booked at T+1 (`bookingDate = businessDate + 1`), so a freshly bought position has
 > `held_since_date: null` on the trade day and is populated by the next day's sync.
-
-> **Breaking schema change (effective 2026-07-20):**
-> `depot_snapshots.positions[]` no longer includes legacy fields `purchase_price` and `buy_price_at_entry`.
-> Use `average_purchase_price` and `purchase_price_at_entry` instead.
-> If you have historical data using the old fields, start with a fresh database or run a one-off migration.
-
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#sync-function-architecture) for the full schema and design.
 
 ### Recent Changes
 
