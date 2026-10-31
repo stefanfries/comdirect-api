@@ -9,15 +9,16 @@ depots, transactions, instruments, and documents.
 ```bash
 uv sync                         # Core client
 uv sync --extra sync            # Add sync function dependencies (MongoDB, Azure)
-uv run pytest tests/ -v         # 115 tests, ~80% coverage
+uv run pytest tests/ -v         # 120 tests
+uv run pytest --cov=src/comdirect_api --cov-report=term-missing -q  # 120 tests, 79% client-package coverage
 uv run ruff check .             # Lint
 ```
 
 ## Architecture
 
 - `src/comdirect_api/client.py` — main async client; use `ComdirectClient.create()` factory (handles full auth flow)
-- `src/comdirect_api/models/` — 11 Pydantic V2 models; all use automatic camelCase → snake_case conversion
-- `src/comdirect_api/settings.py` — credentials via pydantic-settings (CLIENT_ID, CLIENT_SECRET, ZUGANGSNUMMER, PIN)
+- `src/comdirect_api/models/` — Pydantic V2 response models; all use automatic camelCase → snake_case conversion
+- `src/comdirect_api/settings.py` — credentials via pydantic-settings (`CLIENT_ID`, `CLIENT_SECRET`, and `ACCOUNTS__<NAME>__ZUGANGSNUMMER/PIN`)
 - `src/comdirect_api/utils.py` — timestamp utilities
 - `functions/sync/` — GitHub Actions entrypoint that syncs account snapshots to MongoDB Atlas
 
@@ -25,14 +26,17 @@ uv run ruff check .             # Lint
 
 `OAuth2 token → session activation → TAN challenge (push) → banking token`
 
-All steps handled by `ComdirectClient.create()`. Token refresh is automatic.
+All steps handled by `ComdirectClient.create()`. Pass `zugangsnummer` and `pin` explicitly;
+OAuth application credentials default to `settings`. Token refresh is automatic.
 
-### API coverage (43% — 13 of 30 endpoints)
+### API coverage (47% — 14 of 30 Swagger operations)
 
 - Banking: accounts, balances, transactions ✓
 - Brokerage: depots, positions, orders, instruments (partial)
 - Messages: documents, predocuments ✓
 - Reports: aggregated balances ✓
+
+Order placement and the Livetrading quote flow are not implemented; order support is read-only.
 
 ## Key behaviours
 

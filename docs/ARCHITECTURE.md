@@ -25,6 +25,7 @@ comdirect_api/
 │           ├── depots.py       # Depot & position models
 │           ├── instruments.py  # Instrument data models + Price
 │           ├── messages.py     # Documents & messages models
+│           ├── orders.py      # Brokerage order and execution models
 │           ├── reports.py      # Aggregated balance models
 │           └── transactions.py # Transaction models
 ├── functions/
@@ -34,7 +35,7 @@ comdirect_api/
 │       ├── mongo_repo.py       # MongoDB Atlas read/write
 │       ├── settings.py         # SyncSettings (extends ClientSettings)
 │       └── function_app.py     # Legacy Azure Function entry point (unused)
-├── tests/                      # Test suite (117 tests, 80% coverage)
+├── tests/                      # Test suite (120 tests, 79% client-package coverage)
 │   ├── __init__.py
 │   ├── conftest.py             # Shared test fixtures
 │   ├── test_auth.py            # Authentication tests
@@ -43,6 +44,7 @@ comdirect_api/
 │   ├── test_client.py          # Client functionality tests
 │   ├── test_factory.py         # Factory pattern tests
 │   ├── test_messages.py        # Messages API tests
+│   ├── test_orders.py          # Brokerage order read/model tests
 │   ├── test_reports.py         # Reports tests
 │   ├── test_sync_service.py    # Sync function tests
 │   ├── test_tan_flow.py        # TAN workflow tests
@@ -51,8 +53,10 @@ comdirect_api/
 │   └── test_validation_errors.py # Validation tests
 ├── docs/                       # Documentation
 │   ├── ARCHITECTURE.md         # This file
+│   ├── multi-account-settings.md # Multi-account configuration and sync behavior
 │   ├── swagger.json            # Comdirect API specification
-│   └── comdirect_REST_API_Dokumentation.md
+│   ├── comdirect_REST_API_Dokumentation.md
+│   └── comdirect_REST_API_Dokumentation.pdf
 ├── examples/                   # Example scripts
 │   └── logging_config.py       # Logging configuration example
 ├── .env.example                # Environment variable template
@@ -86,17 +90,18 @@ The Comdirect API requires a complex 5-step authentication sequence that **must*
 
 ### Token Management
 
-The `ComdirectClient` class maintains multiple token types:
+The `ComdirectClient` stores these token values:
 
 | Token Type | Purpose | Scope | Usage |
 | ---------- | ------- | ----- | ----- |
 | `primary_access_token` | Initial authentication | `SESSION_RW` | Session setup |
-| `session_access_token` | Post-TAN validation | Session operations | TAN activation |
 | `banking_access_token` | Banking/brokerage access | Account operations | All API calls |
+| `refresh_token` | Refreshes the access token | OAuth refresh flow | Token renewal |
 
 ### State Flags
 
 - `session_id` - Required for all session operations (extracted from headers)
+- `session_tan_active` - Tracks whether a session TAN is active
 - `activated_2fa` - Tracks 2FA state to prevent duplicate TAN challenges
 - `token_expires_at` - Token expiration timestamp for automatic refresh
 
@@ -105,7 +110,13 @@ The `ComdirectClient` class maintains multiple token types:
 The `ComdirectClient.create()` factory method encapsulates the entire authentication flow:
 
 ```python
-client = await ComdirectClient.create()  # Fully authenticated in one call
+from comdirect_api.settings import settings
+
+account = settings.accounts["depot11"]
+client = await ComdirectClient.create(
+    zugangsnummer=account.zugangsnummer.get_secret_value(),
+    pin=account.pin.get_secret_value(),
+)
 ```
 
 This provides a clean API while handling all authentication complexity internally.
@@ -278,43 +289,34 @@ async def test_operation_scenario():
 
 #### Mocking Pattern
 
-Use `httpx.MockTransport` for HTTP mocking:
+Client methods create their own `httpx.AsyncClient`, so tests patch that class and
+configure its async context manager. See `tests/test_banking.py` for a complete example:
 
 ```python
-async def test_api_call(mock_credentials):
-    def handler(request):
-        return httpx.Response(200, json={...})
-    
-    transport = httpx.MockTransport(handler)
-    async with httpx.AsyncClient(transport=transport) as http_client:
-        client = ComdirectClient(http_client=http_client, **mock_credentials)
-        result = await client.api_call()
+with patch("httpx.AsyncClient") as mock_client_class:
+    mock_client_class.return_value.__aenter__.return_value = mock_http_client
+    result = await client.get_account_balances()
 ```
 
 #### Coverage Standards
 
-- **Minimum Coverage**: 80% overall
-- **Critical Paths**: 100% coverage for authentication flow
+- **Coverage target**: 80% for the client package; the current package test command reports 79%
+- **Critical Paths**: Prioritize comprehensive authentication-flow coverage
 - **Test Types**: Unit tests only (no integration tests with real API)
 
 ### Error Handling
 
-#### Debug Logging
+#### Error Reporting
 
-On HTTP errors, log diagnostic information:
-
-```python
-except httpx.HTTPStatusError as e:
-    print(f"❌ HTTP {e.response.status_code} Error")
-    print(f"Response: {e.response.text}")
-    raise
-```
+Client requests call `raise_for_status()`, so HTTP failures propagate as `httpx.HTTPStatusError`.
+Authentication code logs diagnostics through the module logger; sync retry warnings are also
+logged rather than printed.
 
 #### Exception Strategy
 
-- **Specific Exceptions**: Different exceptions for auth vs network failures
+- **Preconditions**: Missing credentials or access tokens raise `ValueError`; HTTP and network failures propagate from `httpx`
 - **Token Expiration**: Automatic refresh before operations
-- **Rate Limiting**: Respect API limits (not currently implemented)
+- **Rate Limiting**: The sync retries HTTP 429 responses for depot positions and transactions up to three times (2, 4, and 8 second waits); the client has no general retry policy
 
 ### Commit Conventions
 
@@ -389,6 +391,8 @@ class ClientSettings(BaseSettings):
 
     model_config = SettingsConfigDict(
         env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
         env_nested_delimiter="__",
     )
 
@@ -406,49 +410,18 @@ The account key (e.g. `depot11`) becomes the `account_name` stored in every Mong
 
 ## API Coverage Strategy
 
-### Current Coverage (13/30 endpoints — 43%)
+### Current Coverage (14 of 30 Swagger operations — 47%)
 
-#### Implemented Endpoints
+The client currently implements 14 Comdirect data operations: 3 banking, 6 brokerage, 1
+instrument, 3 messages, and 1 reports operation. The endpoint list with full paths is maintained
+in the [README API coverage section](../README.md#api-coverage). `revoke_access_token()` is an
+additional OAuth operation and is not included in that count.
 
-**Banking (3/3)**:
+### Current Scope
 
-- ✅ `GET /accounts/balances` - All account balances
-- ✅ `GET /accounts/{accountId}/balances` - Single account balance by ID
-- ✅ `GET /accounts/{accountId}/transactions` - Account transactions with filters
-
-**Brokerage (7/20)**:
-
-- ✅ `GET /depot` - All depots
-- ✅ `GET /depot/{depotId}/positions` - All depot positions
-- ✅ `GET /depot/{depotId}/positions/{positionId}` - Single position details
-- ✅ `GET /depot/{depotId}/transactions` - Depot transactions
-- ✅ `GET /brokerage/depots/{depotId}/v3/orders` - All orders for a depot (with filters)
-- ✅ `GET /brokerage/v3/orders/{orderId}` - Single order by ID
-
-**Instruments (1/1)**:
-
-- ✅ `GET /instruments/{instrumentId}` - Instrument details (WKN/ISIN)
-
-**Messages (3/3)**:
-
-- ✅ `GET /messages/documents` - List documents (statements, confirmations)
-- ✅ `GET /messages/documents/{documentId}` - Download document
-- ✅ `GET /messages/predocuments/{documentId}` - Download predocument
-
-**Reports (1/1)**:
-
-- ✅ `GET /reports/participants/user/v1/allbalances` - Aggregated balances across all comdirect products
-
-**Authentication (additional)**:
-
-- ✅ `DELETE /oauth/revoke` - Token revocation
-
-#### Focus Areas
-
-**Priority 1**: GET-only endpoints for read operations (monitoring/analysis)
-**Excluded**: POST/PATCH/DELETE endpoints (order placement, modifications)
-
-**User Requirement**: No active trading via API - focus on account monitoring and data retrieval only.
+Data retrieval is implemented; order placement, order changes/cancellation, and the Livetrading
+quote flow are not. The stated future goal is automated Livetrading BUY/SELL support for warrants.
+Order placement and its safety controls remain unimplemented; this is not a current client capability.
 
 ### Implementation Pattern for New Endpoints
 
@@ -461,14 +434,17 @@ When adding new API endpoints:
    ```python
    async def get_resource(self, resource_id: str) -> ResourceModel:
        """Brief description of operation."""
+       if not self.banking_access_token:
+           raise ValueError("No banking access token available.")
        if self.is_token_expired():
            await self.refresh_access_token()
        
        headers = self._request_headers(self.banking_access_token)
-       response = await self.http_client.get(
-           f"{BASE_URL}/resource/{resource_id}",
-           headers=headers
-       )
+       async with httpx.AsyncClient() as client:
+           response = await client.get(
+               f"{self.BASE_URL}/resource/{resource_id}",
+               headers=headers,
+           )
        response.raise_for_status()
        return ResourceModel(**response.json())
    ```
@@ -503,9 +479,15 @@ Approve each push TAN on your phone within ~60 seconds of triggering the workflo
 | `ACCOUNTS__DEPOT11__ZUGANGSNUMMER` | Account login number |
 | `ACCOUNTS__DEPOT11__PIN` | Account PIN |
 | `ACCOUNTS__DEPOT11__DISPLAY_NAME` | Human-readable label (optional, stored in MongoDB) |
-| `ACCOUNTS__DEPOT12__*` … | Repeat pattern for each additional account |
+| Additional account prefixes | `DEPOT12`, `DEPOT21`, and `DEPOT22` are also mapped by the current workflow |
 | `MONGODB_CONNECTION_STRING` | Atlas connection string |
-| `DEPOT_TRANSACTIONS_LOOKBACK_DAYS` | Lookback window in days for depot transactions; translated to earliest booking date (`YYYY-MM-DD`) (default: 365 days). Values beyond ~6 months have no effect — see *API Constraints* |
+
+The workflow maps only `DEPOT11`, `DEPOT12`, `DEPOT21`, and `DEPOT22`. Add environment entries
+for any additional account before using it in Actions; local configuration can include more.
+
+The workflow does not currently pass `DEPOT_TRANSACTIONS_LOOKBACK_DAYS` to the sync process, so
+GitHub Actions uses the default of 365 days. Local runs can set it in `.env` or override it with
+`--lookback-days`.
 
 ### Component Overview
 
@@ -759,7 +741,7 @@ git push
 
 ### API Access
 
-- ✅ **Read-only focus** - minimize write operations
+- ✅ **Current scope is read-only** - order placement is not implemented
 - ✅ **Own accounts only** - never access others' data
 - ✅ **Rate limit awareness** - conservative API usage
 - ✅ **Follow ToS** - comply with Comdirect terms of service
@@ -863,4 +845,4 @@ git push
 
 ---
 
-**Last Updated**: July 20, 2026
+**Last Updated**: October 31, 2026

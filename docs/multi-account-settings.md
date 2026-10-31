@@ -18,12 +18,12 @@ CLIENT_ID = User_...
 CLIENT_SECRET = ...
 
 # DISPLAY_NAME is optional — a human-readable label stored in MongoDB
-ACCOUNTS__DEPOT11__ZUGANGSNUMMER = 62823615
-ACCOUNTS__DEPOT11__PIN = 499176
+ACCOUNTS__DEPOT11__ZUGANGSNUMMER = your_depot11_zugangsnummer
+ACCOUNTS__DEPOT11__PIN = your_depot11_pin
 ACCOUNTS__DEPOT11__DISPLAY_NAME = "Megatrend Folger"
 
-ACCOUNTS__DEPOT21__ZUGANGSNUMMER = 45281501
-ACCOUNTS__DEPOT21__PIN = 242381
+ACCOUNTS__DEPOT21__ZUGANGSNUMMER = your_depot21_zugangsnummer
+ACCOUNTS__DEPOT21__PIN = your_depot21_pin
 ACCOUNTS__DEPOT21__DISPLAY_NAME = "Quant System Development"
 ```
 
@@ -116,14 +116,17 @@ Set one group of secrets per account under **Settings → Secrets and variables 
 ACCOUNTS__DEPOT11__ZUGANGSNUMMER
 ACCOUNTS__DEPOT11__PIN
 ACCOUNTS__DEPOT11__DISPLAY_NAME   ← optional but recommended
-DEPOT_TRANSACTIONS_LOOKBACK_DAYS  ← optional (default: 365)
 ```
 
-Repeat the pattern for each additional account. The `workflow_dispatch` trigger exposes an optional `accounts` input field to sync specific accounts (e.g. `DEPOT11,DEPOT22`).
+The GitHub workflow currently maps only `DEPOT11`, `DEPOT12`, `DEPOT21`, and `DEPOT22`. Add an account's environment variables to the workflow before using another account in Actions; local runs can use any number of configured accounts. The `workflow_dispatch` trigger exposes an optional `accounts` input field to sync specific mapped accounts (e.g. `DEPOT11,DEPOT22`).
+
+The workflow does not currently pass `DEPOT_TRANSACTIONS_LOOKBACK_DAYS` to the sync process, so
+GitHub Actions uses the default of 365 days. For local runs, set it in `.env` or use
+`--lookback-days`.
 
 ## Notes
 
 - Each account triggers a separate push TAN approval on the Comdirect mobile app.
 - `display_name` is stored in every document in `account_balances`, `depot_snapshots`, and `transactions` collections, making it easy to filter/display data per account in dashboards.
-- Set `DEPOT_TRANSACTIONS_LOOKBACK_DAYS` (default: `365`) to tune how reliably entry date/entry price can be derived for long-held positions.
+- For local runs, set `DEPOT_TRANSACTIONS_LOOKBACK_DAYS` (default: `365`) to tune how reliably entry date/entry price can be derived for long-held positions.
 - Idempotent transaction inserts skip documents with the same `transaction_id` — if `display_name` is added later, run a one-off backfill using `update_many({"account_name": ..., "display_name": None}, {"$set": {"display_name": ...}})`.

@@ -4,8 +4,8 @@
 ![Python Version](https://img.shields.io/badge/python-3.11%2B-blue)
 ![Code Style](https://img.shields.io/badge/code%20style-ruff-black)
 ![Type Checked](https://img.shields.io/badge/type%20checked-pydantic-green)
-![Tests](https://img.shields.io/badge/tests-117%20passed-success)
-![Coverage](https://img.shields.io/badge/coverage-80%25-green)
+![Tests](https://img.shields.io/badge/tests-120%20passed-success)
+![Coverage](https://img.shields.io/badge/coverage-79%25-green)
 
 A modern, fully asynchronous Python client for the [Comdirect REST API](https://www.comdirect.de). Access your banking and brokerage accounts programmatically with full OAuth2 authentication and 2FA support.
 
@@ -15,10 +15,10 @@ A modern, fully asynchronous Python client for the [Comdirect REST API](https://
 
 - 🔐 **Full OAuth2 Flow** - Complete authentication with 2FA (push TAN support)
 - ⚡ **Fully Async** - Built on `httpx` for high-performance async operations
-- 📊 **Comprehensive API Coverage** - Banking, brokerage, depot positions, transactions, instruments, documents
+- 📊 **Read-focused API Coverage** - Banking, brokerage, depot positions, transactions, instruments, documents
 - 🔒 **Type-Safe** - Pydantic V2 models for all API responses with automatic camelCase conversion
 - 🐍 **Pythonic** - Clean snake_case interface with automatic camelCase for API calls
-- 🧪 **Well Tested** - 117 tests with 80% code coverage
+- 🧪 **Well Tested** - 120 tests with 79% client-package coverage
 - 📦 **Modern Stack** - Python 3.11+, httpx, Pydantic V2, async/await
 - ☁️ **GitHub Actions Sync** - Manual `workflow_dispatch` workflow that syncs Comdirect data to MongoDB Atlas on demand (unattended scheduling not possible due to interactive push TAN requirement)
 
@@ -45,7 +45,7 @@ cd comdirect-api
 # Install core dependencies with uv (recommended)
 uv sync
 
-# Install sync function dependencies (Azure Functions + pymongo)
+# Install sync dependencies (PyMongo and the legacy Azure Function entry point)
 uv sync --extra sync
 ```
 
@@ -80,7 +80,7 @@ DEPOT_TRANSACTIONS_LOOKBACK_DAYS = 365
 
 > **Important**: Never commit your `.env` file to version control!
 
-The account key (e.g. `DEPOT11`) becomes the `account_name` stored in MongoDB. You can define as many accounts as needed — each requires its own Comdirect login credentials. A single `CLIENT_ID` / `CLIENT_SECRET` covers all accounts.
+The account key (e.g. `DEPOT11`) becomes the lowercase `account_name` (e.g. `depot11`) stored in MongoDB. You can define as many accounts as needed — each requires its own Comdirect login credentials. A single `CLIENT_ID` / `CLIENT_SECRET` covers all accounts.
 
 ## 💻 Usage
 
@@ -89,15 +89,20 @@ The account key (e.g. `DEPOT11`) becomes the `account_name` stored in MongoDB. Y
 ```python
 import asyncio
 from comdirect_api.client import ComdirectClient
+from comdirect_api.settings import settings
 
 async def main():
-    # One-line authentication! Factory method handles everything:
+    # The factory handles authentication; account login credentials are explicit.
     # 1. OAuth authentication
     # 2. Session setup
     # 3. TAN challenge (approve on your phone)
     # 4. Banking/brokerage token
     
-    client = await ComdirectClient.create()
+    account = settings.accounts["depot11"]
+    client = await ComdirectClient.create(
+        zugangsnummer=account.zugangsnummer.get_secret_value(),
+        pin=account.pin.get_secret_value(),
+    )
     
     # Ready to use!
     balances = await client.get_account_balances()
@@ -123,15 +128,15 @@ import asyncio
 from comdirect_api.client import ComdirectClient
 
 async def main():
-    # Provide custom credentials (or uses .env by default)
+    # Provide OAuth application and Comdirect account credentials explicitly.
     client = await ComdirectClient.create(
         client_id="your_client_id",
         client_secret="your_client_secret",
         zugangsnummer="your_account_number",
-        pin="your_pin"
+        pin="your_pin",
     )
-    
-    # Client is already authenticated and ready!
+
+    # Client is already authenticated and ready.
     balances = await client.get_account_balances()
     for balance in balances.values:
         print(f"{balance.account_id}: {balance.balance.value} {balance.balance.unit}")
@@ -168,11 +173,12 @@ The workflow installs dependencies, runs `python -m functions.sync.run --account
 | `ACCOUNTS__DEPOT11__ZUGANGSNUMMER` | Account login number |
 | `ACCOUNTS__DEPOT11__PIN` | Account PIN |
 | `ACCOUNTS__DEPOT11__DISPLAY_NAME` | Human-readable label (optional) |
-| `ACCOUNTS__DEPOT12__*` | Repeat for each additional account |
+| `ACCOUNTS__DEPOT12__*`, `ACCOUNTS__DEPOT21__*`, `ACCOUNTS__DEPOT22__*` | Other account groups currently mapped in the workflow |
 | `MONGODB_CONNECTION_STRING` | Atlas connection string |
-| `DEPOT_TRANSACTIONS_LOOKBACK_DAYS` | Optional lookback window in days; converted to earliest booking date (`YYYY-MM-DD`) for depot transactions (default: 365) |
 
-The optional **`accounts` input** accepts a comma-separated list (e.g. `DEPOT11,DEPOT22`, case-insensitive) to sync only specific accounts. Leave blank to sync all.
+The workflow maps four account prefixes: `DEPOT11`, `DEPOT12`, `DEPOT21`, and `DEPOT22`. Add the credentials for another account to the workflow's `Run sync` environment before using it in Actions. The optional **`accounts` input** accepts a comma-separated list (e.g. `DEPOT11,DEPOT22`, case-insensitive) to sync only specific mapped accounts. Leave blank to sync all mapped accounts.
+
+The workflow does not currently pass `DEPOT_TRANSACTIONS_LOOKBACK_DAYS` to the sync process, so Actions uses the default of 365 days. For local runs, set the variable in `.env` or use `--lookback-days`.
 
 #### Running the sync locally
 
@@ -187,7 +193,7 @@ uv run python -m functions.sync.run --debug                  # raw Comdirect JSO
 | ---- | ----------- |
 | `--accounts` | Comma-separated account names; omit to sync all |
 | `--lookback-days` | Overrides `DEPOT_TRANSACTIONS_LOOKBACK_DAYS` for this run |
-| `--debug` | DEBUG logging, including the unparsed depot transaction payloads and a per-transaction summary line |
+| `--debug` | Enables DEBUG logging, including raw Comdirect depot-transaction payloads. Per-transaction summary lines are logged at INFO level on every run. |
 
 Each account requires its own push TAN approval; authentication runs sequentially, then the syncs run in parallel.
 
@@ -222,29 +228,32 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#sync-function-architecture) for 
 
 ## 📚 API Coverage
 
-### ✅ Implemented (13 of 30 endpoints - 43%)
+### ✅ Implemented (14 of 30 Swagger operations - 47%)
 
 #### Banking (3/3)
 
-- ✅ `GET /accounts/balances` - Get all account balances
-- ✅ `GET /accounts/{accountId}/balances` - Get single account balance
-- ✅ `GET /accounts/{accountId}/transactions` - Get account transactions with filters
+- ✅ `GET /banking/clients/user/v2/accounts/balances` - Get all account balances
+- ✅ `GET /banking/v2/accounts/{accountId}/balances` - Get a single account balance
+- ✅ `GET /banking/v1/accounts/{accountId}/transactions` - Get account transactions with filters
 
-#### Brokerage (7/20)
+#### Brokerage (6 operations)
 
-- ✅ `GET /depot` - Get all depots
-- ✅ `GET /depot/{depotId}/positions` - Get all depot positions
-- ✅ `GET /depot/{depotId}/positions/{positionId}` - Get single position details
-- ✅ `GET /depot/{depotId}/transactions` - Get depot transactions
-- ✅ `GET /instruments/{instrumentId}` - Get instrument details (WKN/ISIN)
+- ✅ `GET /brokerage/clients/user/v3/depots` - Get all depots
+- ✅ `GET /brokerage/v3/depots/{depotId}/positions` - Get all depot positions
+- ✅ `GET /brokerage/v3/depots/{depotId}/positions/{positionId}` - Get single position details
+- ✅ `GET /brokerage/v3/depots/{depotId}/transactions` - Get depot transactions
 - ✅ `GET /brokerage/depots/{depotId}/v3/orders` - Get all orders for a depot (with filters)
 - ✅ `GET /brokerage/v3/orders/{orderId}` - Get single order by ID
 
+#### Instruments (1 operation)
+
+- ✅ `GET /brokerage/v1/instruments/{instrumentId}` - Get instrument details (WKN/ISIN)
+
 #### Messages (3/3)
 
-- ✅ `GET /messages/documents` - List documents (statements, confirmations)
-- ✅ `GET /messages/documents/{documentId}` - Download document
-- ✅ `GET /messages/predocuments/{documentId}` - Download predocument
+- ✅ `GET /messages/clients/user/v2/documents` - List documents (statements, confirmations)
+- ✅ `GET /messages/v2/documents/{documentId}` - Download document
+- ✅ `GET /messages/v2/documents/{documentId}/predocument` - Download predocument
 
 #### Reports (1/1)
 
@@ -261,7 +270,7 @@ See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#sync-function-architecture) for 
 
 ### 🚧 Planned
 
-> **Note**: Order placement (POST/PATCH/DELETE operations) is intentionally excluded. This client focuses on read-only operations for account monitoring and analysis.
+> **Current limitation**: Order placement, including Livetrading quote requests for warrants, is not implemented. The client can read depot order books and individual orders, but currently supports read-only account monitoring and analysis.
 
 ## 🛠️ Development
 
@@ -289,8 +298,8 @@ uv run ruff check . --fix            # Auto-fix issues
 
 ### Quality Standards
 
-- **Tests**: 117 passing tests
-- **Coverage**: 80% code coverage
+- **Tests**: 120 passing tests
+- **Coverage**: 79% client-package coverage (`uv run pytest --cov=src/comdirect_api --cov-report=term-missing -q`)
 - **Linting**: Zero errors, zero warnings
 - **Type Safety**: Full Pydantic V2 validation
 
@@ -308,13 +317,14 @@ comdirect_api/
 │       ├── settings.py         # ClientSettings (pydantic-settings)
 │       ├── utils.py            # Utility functions (timestamp)
 │       └── models/             # Pydantic V2 data models
-│           ├── __init__.py     # Public API exports (11 symbols)
+│           ├── __init__.py     # Public API exports (13 symbols)
 │           ├── base.py         # ComdirectBaseModel + AmountValue
 │           ├── accounts.py     # Account & balance models
 │           ├── auth.py         # Authentication models (internal)
 │           ├── depots.py       # Depot & position models
 │           ├── instruments.py  # Instrument data models + Price
 │           ├── messages.py     # Documents & messages models
+│           ├── orders.py       # Brokerage order and execution models
 │           ├── reports.py      # Reports & aggregated balance models
 │           └── transactions.py # Transaction models
 ├── functions/
@@ -323,7 +333,7 @@ comdirect_api/
 │       ├── sync_service.py     # Orchestration logic (testable)
 │       ├── mongo_repo.py       # MongoDB Atlas read/write
 │       └── settings.py         # SyncSettings (extends ClientSettings)
-├── tests/                      # Test suite (117 tests, 80% coverage)
+├── tests/                      # Test suite (120 tests, 79% client-package coverage)
 │   ├── conftest.py             # Shared test fixtures
 │   ├── test_auth.py            # Authentication tests
 │   ├── test_banking.py         # Banking operations tests
@@ -331,6 +341,7 @@ comdirect_api/
 │   ├── test_client.py          # Client functionality tests
 │   ├── test_factory.py         # Factory pattern tests
 │   ├── test_messages.py        # Messages API tests
+│   ├── test_orders.py          # Brokerage order read/model tests
 │   ├── test_reports.py         # Reports tests
 │   ├── test_sync_service.py    # Sync function tests
 │   ├── test_tan_flow.py        # TAN workflow tests
@@ -339,6 +350,7 @@ comdirect_api/
 │   └── test_validation_errors.py # Validation tests
 ├── docs/                       # Documentation
 │   ├── ARCHITECTURE.md         # Architecture & development guidelines ⭐
+│   ├── multi-account-settings.md # Multi-account configuration and sync behavior
 │   ├── swagger.json            # Comdirect API specification
 │   ├── comdirect_REST_API_Dokumentation.md
 │   └── comdirect_REST_API_Dokumentation.pdf

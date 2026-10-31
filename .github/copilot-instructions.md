@@ -8,21 +8,21 @@ This is a Python client for the Comdirect REST API that handles banking and brok
 ### Authentication Flow (Critical)
 The Comdirect API requires a **5-step authentication sequence** that must be followed precisely:
 
-1. **Primary OAuth** (`authenticate()`) - Gets base token with SESSION_RW scope
-2. **Session Status** (`get_session_status()`) - Establishes session ID and checks 2FA state  
-3. **TAN Challenge** (`create_validate_session_tan()`) - Initiates and waits for push TAN approval
-4. **Secondary Token** (`get_banking_brokerage_access()`) - Gets banking/brokerage permissions via `cd_secondary` grant
+1. **Primary OAuth** (`_authenticate()`) - Gets the primary token
+2. **Session Status** (`_get_session_status()`) - Establishes session ID and checks TAN state
+3. **TAN Challenge** (`_create_validate_session_tan()`) - Initiates and waits for push TAN approval
+4. **Secondary Token** (`_get_banking_brokerage_access()`) - Gets banking/brokerage permissions via `cd_secondary` grant
 5. **API Calls** - Use banking token for account/depot operations
 
 **Never skip steps or reorder** - each step depends on the previous one's state.
 
 ### Client State Management
-The `ComdirectClient` class maintains multiple token types and state flags:
+The `ComdirectClient` stores these tokens and state flags:
 - `primary_access_token` - Initial OAuth token
-- `session_access_token` - Token after TAN validation  
 - `banking_access_token` - Token for banking/brokerage operations
+- `refresh_token` and `token_expires_at` - Token renewal state
 - `session_id` - Required for all session operations
-- `activated_2fa` - Tracks 2FA state to avoid duplicate TAN challenges
+- `session_tan_active` and `activated_2fa` - Track session TAN state
 
 ### Request Headers Pattern
 All API requests use a standardized header structure via `_request_headers()`:
@@ -47,28 +47,31 @@ All API requests use a standardized header structure via `_request_headers()`:
 ## Development Patterns
 
 ### Environment Configuration
-Uses `python-dotenv` for credentials. Required env vars:
+Uses `pydantic-settings` to load credentials. Required environment variables:
 - `CLIENT_ID` - OAuth client ID
 - `CLIENT_SECRET` - OAuth client secret  
-- `ZUGANGSNUMMER` - Account login number
-- `PIN` - Account PIN
+- `ACCOUNTS__<NAME>__ZUGANGSNUMMER` - Account login number
+- `ACCOUNTS__<NAME>__PIN` - Account PIN
+- `ACCOUNTS__<NAME>__DISPLAY_NAME` - Optional MongoDB label
+- `MONGODB_CONNECTION_STRING` and `MONGODB_DATABASE` - Required only for the MongoDB sync
 
 ### Testing Approach
 - **Async pytest** with `pytest-asyncio`
 - **Mock HTTP responses** using `httpx` mocks in `tests/`
 - **Fixtures** in `conftest.py` provide test credentials and client instances
-- Import path uses `api.client` (not `src.comdirect_api.client`)
+- Import public client code as `comdirect_api.client` (source is under `src/comdirect_api/`)
 
 ### Error Handling Strategy
-- **Debug prints** on HTTP errors showing status codes and response text
-- **Specific exceptions** for authentication failures vs network issues
-- **Token expiration checks** before API calls with automatic refresh
+- **HTTP failures** propagate as `httpx.HTTPStatusError` from `raise_for_status()`
+- **Missing credentials/tokens** are rejected with `ValueError`
+- **Diagnostics** use the module logger; avoid printing response data directly
+- **Token expiration checks** run before API calls with automatic refresh
 
 ## Critical Implementation Details
 
 ### TAN Challenge Workflow
-The `create_validate_session_tan()` method orchestrates a complex 3-part flow:
-1. Initiate challenge via POST to `/sessions/{id}/validate`
+The `_create_validate_session_tan()` method orchestrates a complex 3-part flow:
+1. Initiate challenge via POST to `/session/clients/user/v1/sessions/{id}/validate`
 2. Poll authentication URL from `x-once-authentication-info` header
 3. Activate session TAN with challenge ID
 
@@ -82,22 +85,24 @@ The `create_validate_session_tan()` method orchestrates a complex 3-part flow:
 
 ### Module Organization
 - `client.py` - Main client class with all API operations
-- `models/` - Pydantic response models (accounts, depots, auth)
-- `clients/` - Empty placeholder files for future modularization
+- `models/` - Pydantic response models for accounts, brokerage, messages, orders, and reports
 - `utils.py` - Timestamp utility for request IDs
 
 ## Commands & Workflows
 
 ### Running Tests
 ```bash
-pytest tests/ -v --tb=short
+uv run pytest tests/ -v --tb=short
 ```
 
 ### Environment Setup
 ```bash
-pip install -r requirements.txt
-# Create .env file with required credentials
-python -m src.comdirect_api.main
+uv sync
+uv sync --extra sync
+uv run pytest tests/ -v --tb=short
+uv run ruff check .
+# Run the local MongoDB sync (requires Comdirect and MongoDB settings)
+uv run python -m functions.sync.run
 ```
 
 ### Adding New API Endpoints
@@ -113,4 +118,5 @@ python -m src.comdirect_api.main
 - **Session management** - Time-limited sessions requiring periodic renewal
 - **Multi-scope tokens** - Different permissions for session vs banking operations
 
-This client is specifically designed for personal account monitoring and follows Comdirect's stringent security requirements for financial API access.
+The current public API is read-only for banking and brokerage data. Order submission, including the
+Livetrading quote flow used for warrants, is not implemented yet.
