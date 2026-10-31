@@ -1,5 +1,6 @@
 {
     // Python  settings
+    "python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe",
     "python.analysis.autoSearchPaths": true,
     "python.analysis.extraPaths": [
         "${workspaceFolder}",
@@ -10,6 +11,7 @@
     },
     "python.envFile": "${workspaceFolder}/.env",
     "python.terminal.activateEnvironment": true,
+    "python-envs.terminal.autoActivationType": "command",
 
     // Python settings
     "python.testing.pytestEnabled": true,
