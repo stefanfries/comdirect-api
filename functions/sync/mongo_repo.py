@@ -63,6 +63,8 @@ class MongoRepo:
         account_type: str | None,
         value: Decimal | None,
         unit: str | None,
+        available_cash_value: Decimal | None,
+        available_cash_unit: str | None,
     ) -> None:
         """Insert a new balance snapshot. Sets both recorded_at and last_synced_at."""
         now = _now()
@@ -75,6 +77,10 @@ class MongoRepo:
             "balance": {
                 "value": _decimal_to_str(value),
                 "unit": unit,
+            },
+            "available_cash_amount": {
+                "value": _decimal_to_str(available_cash_value),
+                "unit": available_cash_unit,
             },
             "recorded_at": now,
             "last_synced_at": now,

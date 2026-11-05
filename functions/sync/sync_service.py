@@ -18,7 +18,7 @@ class SyncService:
     Orchestrates fetching data from the Comdirect API and persisting it to Atlas.
 
     Sync rules:
-    - account_balances  : insert a new snapshot when balance.value has changed.
+    - account_balances  : insert a new snapshot when balance or available cash changes.
       If unchanged, only last_synced_at is updated on the latest document.
       Full time series is retained for charting; last_synced_at acts as a heartbeat.
     - depot_snapshots   : insert a new snapshot of the ENTIRE depot when the
@@ -250,9 +250,21 @@ class SyncService:
                 continue
 
             new_value = ab.balance.value if ab.balance else None
+            available_cash = ab.available_cash_amount
+            available_cash_value = available_cash.value if available_cash else None
+            available_cash_unit = available_cash.unit if available_cash else None
             latest = await self._repo.get_latest_balance(account_id)
 
-            if latest and latest.get("balance", {}).get("value") == str(new_value):
+            if (
+                latest
+                and latest.get("balance", {}).get("value") == str(new_value)
+                and latest.get("available_cash_amount") == {
+                    "value": (
+                        str(available_cash_value) if available_cash_value is not None else None
+                    ),
+                    "unit": available_cash_unit,
+                }
+            ):
                 await self._repo.touch_balance_last_synced(account_id)
                 touched += 1
                 continue
@@ -269,6 +281,8 @@ class SyncService:
                 ),
                 value=new_value,
                 unit=ab.balance.unit if ab.balance else None,
+                available_cash_value=available_cash_value,
+                available_cash_unit=available_cash_unit,
             )
             inserted += 1
             logger.info("Balance snapshot inserted for account %s", account_id)

@@ -16,6 +16,7 @@ The local API specification is dated April 2020. Before implementing writes, con
 - It currently implements only `get_depot_orders()` and `get_order()` for the Orders API.
 - `models/orders.py` contains a response-oriented `Order` model, including `quote_id` and `quote_ticket_id`; typed dimensions, quote, request, cost, and TAN-challenge models are not present.
 - The current `functions/sync/` workflow is a read/snapshot pipeline and must never submit orders.
+- Account snapshots now store booked `balance` and `available_cash_amount` separately. Availability-only changes create snapshots; older documents can lack the availability field. See [the account snapshot schema](ARCHITECTURE.md#mongodb-collections).
 
 ## Proposed Structure
 
@@ -43,6 +44,7 @@ The preliminary `POST /brokerage/v3/orders/prevalidation` endpoint may be useful
 - Start in preview/dry-run mode: dimensions and quote discovery are allowed, submission is disabled. Require an explicit live-mode switch for any write call.
 - Bind approval to an immutable intent (account, depot, instrument, side, quantity, venue, quote parameters, and configured limits). Any change invalidates approval and requires a new quote/approval.
 - Enforce account/depot and venue allowlists, warrant-only instrument checks, maximum quantity/notional, and an operator-defined price/spread tolerance. Fail closed when dimensions, compliance notices, or quote data are missing or ambiguous.
+- For BUY funding checks, retrieve current `available_cash_amount` for the linked Verrechnungskonto through `get_account_balance(account_id)` rather than relying on booked balance or a potentially stale sync snapshot. The API amount can include credit; define explicitly whether credit use is permitted and retain a cost buffer. Missing availability must block submission, not fall back silently to booked balance. Verify intraday API timing before enabling live orders; a cash check does not reserve funds or guarantee acceptance.
 - Quote validity is time-sensitive. Set a short internal deadline from the returned validity; abort rather than submit if the quote is expired or the process is delayed.
 - Never blindly retry quote-ticket authorization, order validation, or order submission. On timeout after a write, mark the intent `unknown`, query Comdirect for a matching order, and require reconciliation before any resubmission. Use a unique local `intent_id` to prevent duplicate local executions; do not assume the Comdirect endpoint provides idempotency.
 - Record state transitions and sanitized API outcomes for audit. Redact credentials, access tokens, TAN challenges, and sensitive response headers from logs and persisted diagnostics.
@@ -55,6 +57,7 @@ The preliminary `POST /brokerage/v3/orders/prevalidation` endpoint may be useful
 - Confirm which Comdirect logins/depots may trade warrants and whether the account can use Livetrading.
 - Verify the live API paths, request/response schemas, TAN header forwarding, quote validity semantics, and cost-indication support.
 - Choose the initial confirmation channel and define maximum quantity/notional and price tolerance.
+- Confirm the linked Verrechnungskonto, live availability behavior, credit-use policy, and handling of missing or stale cash data.
 - Document which compliance notices must block or require acknowledgement.
 
 **Exit gate:** written acceptance criteria and an agreed manual-approval policy; no writes enabled.
@@ -95,6 +98,7 @@ The preliminary `POST /brokerage/v3/orders/prevalidation` endpoint may be useful
 
 - Unit-test each request method for URL, query parameters, JSON aliases, authentication headers, TAN challenge forwarding, token refresh, and HTTP errors.
 - Test the quote-to-order state machine with mocked time, expired/mismatched quotes, retries, and duplicate intents.
+- Test cash checks with unchanged booked balance but increased/decreased availability, zero or missing availability, stale snapshots, credit restrictions, and estimated costs.
 - Test repository persistence and unique `intent_id` behavior, including restart/reconciliation after an uncertain submission.
 - Keep all automated tests mocked; never submit a real order in CI.
 - Run the full suite and Ruff before enabling a live execution path. Real-account tests require explicit operator action and must not be part of routine CI.

@@ -199,7 +199,7 @@ Each account requires its own push TAN approval; authentication runs sequentiall
 
 The sync:
 
-- **Snapshots account balances** — inserts a new document on value change; updates `last_synced_at` heartbeat otherwise
+- **Snapshots account balances** — stores booked `balance` and `available_cash_amount` as `{value, unit}` objects (decimal-string values). Inserts a new document when either amount changes; updates `last_synced_at` otherwise. Older snapshots without available cash get a fresh snapshot on the next sync. Available cash includes any credit limit and reflects unbooked commitments; it is not necessarily owned cash.
 - **Snapshots the entire depot** — inserts a new document (all positions) when composition changes (qty change, new position, sold position); updates `last_synced_at` heartbeat otherwise. Each position includes `current_price` (per-unit), `current_value` (total), `average_purchase_price`, `held_since_date`, and `purchase_price_at_entry`.
 - **Backfills held-since on later syncs** — if Comdirect exposes the BUY/TRANSFER_IN transaction only on the next business day, a later depot sync can insert a new snapshot to populate `held_since_date` and `purchase_price_at_entry` even when quantity is unchanged.
 - **Preserves existing held-since metadata** — if a later sync cannot derive entry metadata from the current transaction window, previously stored `held_since_date` and `purchase_price_at_entry` are retained when quantity is unchanged (no metadata regression to null).

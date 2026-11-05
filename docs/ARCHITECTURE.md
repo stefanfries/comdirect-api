@@ -35,7 +35,7 @@ comdirect_api/
 │       ├── mongo_repo.py       # MongoDB Atlas read/write
 │       ├── settings.py         # SyncSettings (extends ClientSettings)
 │       └── function_app.py     # Legacy Azure Function entry point (unused)
-├── tests/                      # Test suite (120 tests, 79% client-package coverage)
+├── tests/                      # Test suite (125 tests; coverage measured separately)
 │   ├── __init__.py
 │   ├── conftest.py             # Shared test fixtures
 │   ├── test_auth.py            # Authentication tests
@@ -523,13 +523,21 @@ _repo = MongoRepo(
   "iban": "DE89370400440532013000",
   "account_type": "Girokonto",
   "balance": { "value": "1234.56", "unit": "EUR" },
-  "recorded_at": "<UTC datetime — immutable, when value first appeared>",
+    "available_cash_amount": { "value": "2345.67", "unit": "EUR" },
+    "recorded_at": "<UTC datetime — immutable, when this snapshot was observed>",
   "last_synced_at": "<UTC datetime — updated every sync run>"
 }
 ```
 
-- `recorded_at` is **immutable** — it marks the first time this exact balance was observed.
-- `last_synced_at` acts as a **heartbeat** — updated on every sync, even when balance is unchanged.
+- `balance` is the booked account balance; `available_cash_amount` is the available amount shown as **Verfügbar** by Comdirect. Both store decimal-string `value` and currency `unit`.
+- The existing `get_account_balances()` request (`GET /banking/clients/user/v2/accounts/balances`) returns both amounts. For one account, use `get_account_balance(account_id)` (`GET /banking/v2/accounts/{accountId}/balances`) with the API account UUID, not the IBAN.
+- The API fields `availableCashAmount` and `availableCashAmountEUR` map to the model attributes `available_cash_amount` and `available_cash_amount_eur`. The sync persists the account-currency `available_cash_amount`, not a separate EUR conversion.
+- Available cash is documented as booked balance plus credit limit, adjusted for committed but unbooked amounts. It is not necessarily owned cash. Intraday trades can change availability before the booked balance changes; exact API timing still requires live verification.
+- A new snapshot is inserted when the booked balance value or available-cash value/currency differs from the latest snapshot. Available-cash-only increases, decreases, and zero values are retained.
+- A latest snapshot without `available_cash_amount` causes a new snapshot on the next sync, even if the booked balance is unchanged. Historical records are not backfilled; downstream consumers must tolerate the missing field and must not treat it as zero or substitute booked balance silently.
+- `recorded_at` is **immutable** and records when this snapshot was observed, not when the trade executed or settled.
+- `last_synced_at` acts as a **heartbeat**; if both amounts are unchanged, only this timestamp is updated.
+- Latest account state = `find_one({"account_id": ...}, sort=[("recorded_at", -1)])`. Availability is current only as of the most recent successful sync, not a continuous live feed.
 - Full history is retained for charting.
 
 #### `depot_snapshots` — Insert-only; one document = entire depot state
@@ -603,12 +611,13 @@ _repo = MongoRepo(
 
 | Collection | On new data | When unchanged |
 | ---------- | ----------- | -------------- |
-| `account_balances` | Insert new snapshot | Touch `last_synced_at` only |
+| `account_balances` | Insert on booked-balance value or available-cash value/currency change, or missing available-cash field | Touch `last_synced_at` only |
 | `depot_snapshots` | Insert new full-depot snapshot | Touch `last_synced_at` only |
 | `transactions` | Insert | Skip (idempotent) |
 
 ### Recent Changes
 
+- **2026-11-05 — Available cash snapshots**: Account snapshots now retain `available_cash_amount` alongside booked `balance`, including intraday availability changes and refresh of legacy snapshots lacking the field. All 125 mocked tests and Ruff pass; live API timing has not been verified.
 - **2026-07-30 — Depot metadata preservation fix**: Depot sync no longer overwrites existing `held_since_date` / `purchase_price_at_entry` with null when the latest transaction window cannot derive entry metadata and quantity is unchanged.
 
 ### Installing Sync Dependencies
@@ -785,6 +794,12 @@ git push
 - **httpx Documentation**: <https://www.python-httpx.org/>
 
 ## Changelog
+
+### November 2026
+
+- **Available cash persistence (2026-11-05)**: `account_balances` stores API `availableCashAmount` as `available_cash_amount: {value, unit}` alongside booked `balance`. Changes to available cash alone insert snapshots; legacy records missing the field trigger a fresh snapshot without rewriting history.
+- **Verification**: 125 tests pass, including available-cash increases, decreases, zero availability, legacy snapshots, and repository serialization; Ruff passes. No live API comparison has been performed.
+- **Local environment**: Python is pinned to 3.12; VS Code selects `.venv` and enables Python terminal activation. The old Python 3.11 backup environment and its ignore entry have been removed. See [Python upgrade notes](python-312-upgrade.md).
 
 ### August 2026
 

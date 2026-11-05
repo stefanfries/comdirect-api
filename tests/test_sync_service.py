@@ -6,14 +6,20 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from functions.sync.mongo_repo import _date_to_datetime, _decimal_to_str
+from functions.sync.mongo_repo import MongoRepo, _date_to_datetime, _decimal_to_str
 from functions.sync.sync_service import SyncService
 
 # ---------------------------------------------------------------------------
 # Helpers to build lightweight mock Pydantic-like objects
 # ---------------------------------------------------------------------------
 
-def _account_balance(account_id: str, value: Decimal, unit: str = "EUR", iban: str = "DE00"):
+def _account_balance(
+    account_id: str,
+    value: Decimal,
+    unit: str = "EUR",
+    iban: str = "DE00",
+    available_cash_value: Decimal | None = None,
+):
     account = MagicMock()
     account.account_id = account_id
     account.iban = iban
@@ -26,6 +32,10 @@ def _account_balance(account_id: str, value: Decimal, unit: str = "EUR", iban: s
     ab = MagicMock()
     ab.account = account
     ab.balance = balance
+    ab.available_cash_amount.value = (
+        value if available_cash_value is None else available_cash_value
+    )
+    ab.available_cash_amount.unit = unit
     return ab
 
 
@@ -101,6 +111,8 @@ async def test_sync_balances_new_account_inserts():
         account_type="Girokonto",
         value=Decimal("100.00"),
         unit="EUR",
+        available_cash_value=Decimal("100.00"),
+        available_cash_unit="EUR",
     )
     repo.touch_balance_last_synced.assert_not_called()
     assert result == {"inserted": 1, "touched": 0}
@@ -114,7 +126,10 @@ async def test_sync_balances_unchanged_touches():
 
     ab = _account_balance("ACC1", Decimal("100.00"))
     client.get_account_balances.return_value = MagicMock(values=[ab])
-    repo.get_latest_balance.return_value = {"balance": {"value": "100.00"}}
+    repo.get_latest_balance.return_value = {
+        "balance": {"value": "100.00"},
+        "available_cash_amount": {"value": "100.00", "unit": "EUR"},
+    }
 
     service = SyncService(client, repo, account_name="TEST")
     result = await service.sync_account_balances()
@@ -132,7 +147,10 @@ async def test_sync_balances_changed_inserts():
 
     ab = _account_balance("ACC1", Decimal("200.00"))
     client.get_account_balances.return_value = MagicMock(values=[ab])
-    repo.get_latest_balance.return_value = {"balance": {"value": "100.00"}}
+    repo.get_latest_balance.return_value = {
+        "balance": {"value": "100.00"},
+        "available_cash_amount": {"value": "200.00", "unit": "EUR"},
+    }
 
     service = SyncService(client, repo, account_name="TEST")
     result = await service.sync_account_balances()
@@ -153,7 +171,10 @@ async def test_sync_balances_multiple_accounts():
     client.get_account_balances.return_value = MagicMock(values=[ab1, ab2])
 
     repo.get_latest_balance.side_effect = lambda acc_id: (
-        {"balance": {"value": "100.00"}} if acc_id == "ACC1"
+        {
+            "balance": {"value": "100.00"},
+            "available_cash_amount": {"value": "100.00", "unit": "EUR"},
+        } if acc_id == "ACC1"
         else None
     )
 
@@ -161,6 +182,70 @@ async def test_sync_balances_multiple_accounts():
     result = await service.sync_account_balances()
 
     assert result == {"inserted": 1, "touched": 1}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("available_cash", ["153360.47", "10000.00", "0.00"])
+async def test_sync_balances_available_cash_only_change_inserts(available_cash):
+    client = AsyncMock()
+    repo = AsyncMock()
+    balance = _account_balance(
+        "ACC1", Decimal("61817.47"), available_cash_value=Decimal(available_cash)
+    )
+    client.get_account_balances.return_value = MagicMock(values=[balance])
+    repo.get_latest_balance.return_value = {
+        "balance": {"value": "61817.47"},
+        "available_cash_amount": {"value": "61817.47", "unit": "EUR"},
+    }
+
+    result = await SyncService(client, repo, account_name="TEST").sync_account_balances()
+
+    assert result == {"inserted": 1, "touched": 0}
+    repo.touch_balance_last_synced.assert_not_called()
+    repo.insert_balance.assert_called_once()
+    assert repo.insert_balance.call_args.kwargs["available_cash_value"] == Decimal(available_cash)
+    assert repo.insert_balance.call_args.kwargs["available_cash_unit"] == "EUR"
+
+
+@pytest.mark.asyncio
+async def test_sync_balances_legacy_snapshot_inserts():
+    client = AsyncMock()
+    repo = AsyncMock()
+    client.get_account_balances.return_value = MagicMock(
+        values=[_account_balance("ACC1", Decimal("100.00"))]
+    )
+    repo.get_latest_balance.return_value = {"balance": {"value": "100.00"}}
+
+    result = await SyncService(client, repo, account_name="TEST").sync_account_balances()
+
+    assert result == {"inserted": 1, "touched": 0}
+    repo.insert_balance.assert_called_once()
+    repo.touch_balance_last_synced.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_insert_balance_stores_available_cash():
+    repo = MongoRepo.__new__(MongoRepo)
+    collection = AsyncMock()
+    repo._db = {"account_balances": collection}
+
+    await repo.insert_balance(
+        account_id="ACC1",
+        account_name="TEST",
+        display_name=None,
+        iban="DE00",
+        account_type="Verrechnungskonto",
+        value=Decimal("61817.47"),
+        unit="EUR",
+        available_cash_value=Decimal("153360.47"),
+        available_cash_unit="EUR",
+    )
+
+    collection.insert_one.assert_awaited_once()
+    document = collection.insert_one.call_args.args[0]
+    assert document["balance"] == {"value": "61817.47", "unit": "EUR"}
+    assert document["available_cash_amount"] == {"value": "153360.47", "unit": "EUR"}
+    assert document["recorded_at"] == document["last_synced_at"]
 
 
 # ---------------------------------------------------------------------------

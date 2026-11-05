@@ -124,6 +124,38 @@ The workflow does not currently pass `DEPOT_TRANSACTIONS_LOOKBACK_DAYS` to the s
 GitHub Actions uses the default of 365 days. For local runs, set it in `.env` or use
 `--lookback-days`.
 
+## Booked Balance and Available Cash
+
+Each configured login syncs both amounts for every bank account returned by
+`get_account_balances()`, including its Verrechnungskonto. No additional credentials,
+settings, or API request are needed.
+
+The `account_balances` collection stores:
+
+```json
+{
+    "balance": { "value": "1000.00", "unit": "EUR" },
+    "available_cash_amount": { "value": "1500.00", "unit": "EUR" }
+}
+```
+
+`balance` is the booked balance. `available_cash_amount` comes from API
+`availableCashAmount` and represents the available spending limit, including any
+credit limit and adjustments for unbooked commitments. It is not necessarily owned
+cash. Trades may affect availability before the booked balance changes; exact
+intraday API timing has not yet been verified against a live response.
+
+A booked-balance value change or available-cash value/currency change inserts a
+snapshot. Otherwise only `last_synced_at` is updated. An older latest snapshot
+without `available_cash_amount` gets a new snapshot at the next successful sync;
+historical documents are not backfilled.
+
+Downstream applications should select the latest snapshot by `account_id` and
+`recorded_at` descending, parse monetary strings as decimals, and use
+`last_synced_at` to assess freshness. Missing availability in older documents means
+unknown, not zero. Sync runs are snapshots, not a continuously updated cash feed.
+See [collection details](ARCHITECTURE.md#mongodb-collections).
+
 ## Notes
 
 - Each account triggers a separate push TAN approval on the Comdirect mobile app.
